@@ -6,13 +6,25 @@ with all rules and physics in an engine-free C# core.
 ## Commands
 
 ```sh
-dotnet test                 # the whole core suite, ~0.1s, no editor needed
-dotnet test --filter Roquet # one test or one class
-dotnet build
+dotnet test                        # the whole core suite, ~0.1s, no editor needed
+dotnet test --filter Roquet        # one test or one class
+dotnet run --project tools/Croquet.Lab    # the playable lab, opens localhost:5055
 ```
 
-`dotnet test` is the loop. Run it after every change to `core/`. It needs no
-Unity, no device, and no graphics.
+`dotnet test` is the correctness loop — run it after every change to `core/`.
+It needs no Unity, no device, no graphics.
+
+`Croquet.Lab` is the *feel* loop, and the two are not the same job: the tests
+say the physics is right, the lab says whether it is any fun. It is a tiny
+web host that runs the real `Croquet.Core` and hands whole shots to a browser
+canvas as frames. Drag to aim, and there are live sliders for friction,
+restitution and power, so feel can be found by hand and reported back as
+numbers. Pass `--no-open` to skip launching a browser.
+
+Simulating the entire shot on the strike and animating the result is not a
+shortcut for the lab's benefit — it is how the game itself will work, because
+a deterministic sim knows the outcome the moment the ball is struck. Same
+shape for online play and for the AI's search.
 
 ## Layout
 
@@ -20,6 +32,7 @@ Unity, no device, and no graphics.
 |---|---|
 | `core/` | rules + physics. **No `UnityEngine` reference, ever.** netstandard2.1 so Unity can consume it |
 | `tests/` | xunit against `core/`. net9.0 |
+| `tools/Croquet.Lab/` | dev-only web host for tuning feel. Never ships |
 | `unity/` | the Unity project — rendering, input, UI, audio. Not created yet |
 
 ## The two rules that matter
