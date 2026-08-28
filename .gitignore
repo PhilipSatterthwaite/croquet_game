@@ -1,0 +1,36 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Unity — everything regenerated from Assets/ and ProjectSettings/
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Bb]uilds/
+unity/[Ll]ogs/
+unity/[Uu]ser[Ss]ettings/
+unity/[Mm]emoryCaptures/
+unity/[Rr]ecordings/
+unity/*.csproj
+unity/*.sln
+unity/Assets/AssetStoreTools*
+
+# Unity meta files must be committed -- they carry asset GUIDs, and losing them
+# breaks every reference in every scene.
+!*.meta
+
+# Builds and signing
+*.apk
+*.aab
+*.ipa
+*.keystore
+*.p12
+*.mobileprovision
+
+# OS
+.DS_Store
+Thumbs.db
