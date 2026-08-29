@@ -7,46 +7,44 @@
 <style>
 :root{
   --g:#E7E2D7; --s:#FCFAF6; --l:#C7BFAE; --t:#201C14; --d:#6B6355;
-  --lawn:#3F7A46; --line:#DCE8DD;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--g);color:var(--t);
   font:400 15px/1.45 ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   -webkit-font-smoothing:antialiased}
-.wrap{max-width:1080px;margin:0 auto;padding:18px 16px 40px}
-header{display:flex;align-items:baseline;gap:12px;margin-bottom:14px}
+.wrap{max-width:1140px;margin:0 auto;padding:16px 16px 40px}
+header{display:flex;align-items:baseline;gap:14px;margin-bottom:12px;flex-wrap:wrap}
 h1{margin:0;font-size:14px;font-weight:650;letter-spacing:.22em;text-transform:uppercase}
-header span{font-size:12px;color:var(--d)}
+#turn{font-size:14px;font-weight:600}
+#msg{font-size:13px;color:var(--d)}
 
 #court{display:block;width:100%;height:auto;border-radius:10px;touch-action:none;
   cursor:crosshair;box-shadow:0 2px 10px -4px #0005}
 
-.panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+.panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
   gap:12px;margin-top:14px}
 .card{background:var(--s);border:1px solid var(--l);border-radius:12px;padding:12px 14px}
 .card h2{margin:0 0 10px;font-size:10px;font-weight:650;color:var(--d);
   letter-spacing:.18em;text-transform:uppercase}
-
 .row{display:flex;align-items:center;justify-content:space-between;
   font-size:12px;color:var(--d);margin-bottom:3px}
 .row b{color:var(--t);font-variant-numeric:tabular-nums;font-weight:650}
-input[type=range]{width:100%;accent-color:var(--lawn);margin:0 0 10px}
+input[type=range]{width:100%;accent-color:#3F7A46;margin:0 0 10px}
 
-.balls{display:flex;gap:8px;flex-wrap:wrap}
-.bb{width:34px;height:34px;border-radius:50%;border:2px solid transparent;
-  cursor:pointer;padding:0}
-.bb[aria-pressed=true]{border-color:var(--t);box-shadow:0 0 0 2px var(--s) inset}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10px;color:var(--d);letter-spacing:.12em;
+  text-transform:uppercase;font-weight:650;padding-bottom:5px}
+td{padding:3px 0;border-top:1px solid var(--l)}
+.sw{display:inline-block;width:14px;height:14px;border-radius:50%;
+  vertical-align:-2px;margin-right:7px}
+tr[data-striker=true] td{font-weight:700}
+.dead{font-size:10px;color:var(--d);letter-spacing:.06em}
 
-button.act{width:100%;padding:11px 0;margin-top:4px;border:1px solid var(--l);
+button.act{width:100%;padding:10px 0;margin-top:6px;border:1px solid var(--l);
   border-radius:9px;background:var(--g);color:var(--t);font:inherit;font-size:13px;
   font-weight:600;cursor:pointer}
 button.act:active{transform:scale(.98)}
-
-table{width:100%;border-collapse:collapse;font-size:12px;
-  font-variant-numeric:tabular-nums}
-td{padding:2px 0}
-td:last-child{text-align:right;font-weight:650}
-.hint{font-size:12px;color:var(--d);margin:10px 2px 0;line-height:1.5}
+.hint{font-size:12px;color:var(--d);margin:10px 2px 0;line-height:1.55}
 kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   padding:1px 5px;font:inherit;font-size:11px}
 </style>
@@ -56,15 +54,17 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
 
 <header>
   <h1>Croquet lab</h1>
-  <span id="status">drag from a ball to aim</span>
+  <span id="turn"></span>
+  <span id="msg">drag to aim</span>
 </header>
 
 <canvas id="court"></canvas>
 
 <p class="hint">
-  <kbd>drag</kbd> from anywhere to aim the selected ball — the further you drag,
-  the harder the strike. <kbd>shift-drag</kbd> a ball to reposition it.
-  The physics is the real <code>Croquet.Core</code>, running in .NET.
+  <kbd>drag</kbd> to aim the striker — the further you drag, the harder the
+  strike. The white ring marks the hoop the striker is playing for.
+  After a roquet your ball is placed against the ball you hit and you get the
+  croquet stroke, then a continuation.
 </p>
 
 <div class="panel">
@@ -73,294 +73,264 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
     <h2>Feel</h2>
     <div class="row"><span>Friction</span><b id="vF">0.60</b></div>
     <input type="range" id="rF" min="0.15" max="2" step="0.05" value="0.6">
-    <div class="row"><span>Restitution</span><b id="vR">0.80</b></div>
+    <div class="row"><span>Ball bounce</span><b id="vR">0.80</b></div>
     <input type="range" id="rR" min="0.3" max="1" step="0.02" value="0.8">
+    <div class="row"><span>Hoop bounce</span><b id="vO">0.50</b></div>
+    <input type="range" id="rO" min="0.1" max="0.95" step="0.05" value="0.5">
     <div class="row"><span>Max power</span><b id="vP">7.0 m/s</b></div>
     <input type="range" id="rP" min="2" max="14" step="0.5" value="7">
     <div class="row"><span>Playback</span><b id="vS">1.0×</b></div>
-    <input type="range" id="rS" min="0.15" max="2" step="0.05" value="1">
+    <input type="range" id="rS" min="0.15" max="3" step="0.05" value="1">
   </div>
 
   <div class="card">
-    <h2>Striker</h2>
-    <div class="balls" id="picker"></div>
-    <button class="act" id="reset">Reset positions</button>
-    <button class="act" id="replay">Replay last shot</button>
+    <h2>Balls</h2>
+    <table><thead><tr><th>Ball</th><th>Playing for</th><th>Dead on</th></tr></thead>
+      <tbody id="tbl"></tbody></table>
   </div>
 
   <div class="card">
-    <h2>Last shot</h2>
-    <table id="readout"><tbody>
-      <tr><td>—</td><td></td></tr>
-    </tbody></table>
+    <h2>Game</h2>
+    <button class="act" id="new4">New game — 4 balls</button>
+    <button class="act" id="new6">New game — 6 balls</button>
   </div>
 
 </div>
 </div>
 
 <script>
-// The court in metres. Mirrors CourtSpec's defaults; the sliders below feed
-// the same object straight back to the server, so what is tuned here is
-// literally what the game runs on.
-const SPEC = {
-  width: 30.48, height: 15.24, ballRadius: 0.046,
-  friction: 0.6, restitution: 0.8, sleepSpeed: 0.02
-};
-
 const COLOURS = ['#2B5FCE', '#D9342A', '#363D47', '#EFC01F', '#1F6633', '#DB6E0E'];
 const NAMES   = ['Blue', 'Red', 'Black', 'Yellow', 'Green', 'Orange'];
 
-// Starting arrangement: strung out along the centre with a couple close
-// together, which gives something to hit without setting up every time.
-function startPositions() {
-  return [
-    { x: 3.0,  y: 7.62, inPlay: true },
-    { x: 12.0, y: 6.40, inPlay: true },
-    { x: 12.6, y: 8.60, inPlay: true },
-    { x: 19.0, y: 7.62, inPlay: true },
-    { x: 24.0, y: 4.50, inPlay: true },
-    { x: 24.8, y: 10.9, inPlay: true }
-  ];
-}
-
-let balls   = startPositions();
-let striker = 0;
-let lastShot = null;          // {dx, dy, power, from:[...]}
-let anim    = null;           // {frames, i, speed}
+let FIELD = null, STATE = null, anim = null;
 
 const cv = document.getElementById('court');
 const ctx = cv.getContext('2d');
-const statusEl = document.getElementById('status');
+const msg = document.getElementById('msg');
+const turnEl = document.getElementById('turn');
+
+const j = (url, body) => fetch(url, body ? {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body)
+} : undefined).then(r => r.json());
 
 // --- geometry -------------------------------------------------------------
-let scale = 1, padPx = 18;
+let scale = 1; const pad = 18;
 
 function layout() {
+  if (!FIELD) return;
   const cssW = cv.clientWidth;
-  scale = (cssW - padPx * 2) / SPEC.width;
-  const cssH = SPEC.height * scale + padPx * 2;
-
+  scale = (cssW - pad * 2) / FIELD.width;
+  const cssH = FIELD.height * scale + pad * 2;
   const dpr = window.devicePixelRatio || 1;
   cv.style.height = cssH + 'px';
-  cv.width  = Math.round(cssW * dpr);
+  cv.width = Math.round(cssW * dpr);
   cv.height = Math.round(cssH * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   draw();
 }
-const toPx = (x, y) => [padPx + x * scale, padPx + y * scale];
-function toM(px, py) {
+const px = (x, y) => [pad + x * scale, pad + y * scale];
+function toM(cx, cy) {
   const r = cv.getBoundingClientRect();
-  return [(px - r.left - padPx) / scale, (py - r.top - padPx) / scale];
+  return [(cx - r.left - pad) / scale, (cy - r.top - pad) / scale];
 }
 
 // --- drawing --------------------------------------------------------------
 function draw(positions, aim) {
-  const p = positions || balls.map(b => [b.x, b.y]);
+  if (!FIELD || !STATE) return;
+  const pos = positions || STATE.balls.map(b => [b.x, b.y]);
   const w = cv.clientWidth, h = parseFloat(cv.style.height);
 
   ctx.clearRect(0, 0, w, h);
-
-  ctx.fillStyle = '#E7E2D7';
-  ctx.fillRect(0, 0, w, h);
-
+  ctx.fillStyle = '#E7E2D7'; ctx.fillRect(0, 0, w, h);
   ctx.fillStyle = '#3F7A46';
-  ctx.fillRect(padPx, padPx, SPEC.width * scale, SPEC.height * scale);
+  ctx.fillRect(pad, pad, FIELD.width * scale, FIELD.height * scale);
 
-  // Mown stripes, purely so distance is readable at a glance.
   ctx.fillStyle = 'rgba(255,255,255,.045)';
-  for (let m = 0; m < SPEC.width; m += 4)
-    ctx.fillRect(padPx + m * scale, padPx, 2 * scale, SPEC.height * scale);
+  for (let m = 0; m < FIELD.width; m += 4)
+    ctx.fillRect(pad + m * scale, pad, 2 * scale, FIELD.height * scale);
 
-  ctx.strokeStyle = '#DCE8DD';
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(padPx, padPx, SPEC.width * scale, SPEC.height * scale);
+  ctx.strokeStyle = '#DCE8DD'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(pad, pad, FIELD.width * scale, FIELD.height * scale);
+
+  // the hoop the striker is playing for
+  const me = STATE.balls[STATE.striker];
+  const tgt = FIELD.points[me.point];
+  if (tgt) {
+    const [tx, ty] = px(tgt.x, tgt.y);
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.arc(tx, ty, Math.max(11, 0.42 * scale), 0, Math.PI * 2);
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // hoops: two uprights and the arch between them
+  const wire = Math.max(1.6, FIELD.hoops[0].wire * scale * 2);
+  for (const hp of FIELD.hoops) {
+    const [cx, cy] = px(hp.x, hp.y);
+    const gap = hp.halfGap * scale;
+    ctx.strokeStyle = '#EDF3EE'; ctx.lineWidth = wire; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - gap); ctx.lineTo(cx, cy + gap);
+    ctx.stroke();
+    ctx.fillStyle = '#EDF3EE';
+    for (const s of [-1, 1]) {
+      ctx.beginPath(); ctx.arc(cx, cy + s * gap, wire * .9, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  for (const peg of [FIELD.homePeg, FIELD.turningPeg]) {
+    const [cx, cy] = px(peg[0], peg[1]);
+    ctx.fillStyle = '#F2E4C8';
+    ctx.beginPath();
+    ctx.arc(cx, cy, Math.max(4, FIELD.pegRadius * scale * 2.2), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#7A5C20'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
 
   if (aim) {
-    const [ax, ay] = toPx(balls[striker].x, balls[striker].y);
-    ctx.strokeStyle = 'rgba(255,255,255,.85)';
-    ctx.lineWidth = 2;
+    const [ax, ay] = px(pos[STATE.striker][0], pos[STATE.striker][1]);
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2;
     ctx.setLineDash([6, 5]);
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
+    ctx.beginPath(); ctx.moveTo(ax, ay);
     ctx.lineTo(ax + aim.dx * scale, ay + aim.dy * scale);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.stroke(); ctx.setLineDash([]);
   }
 
-  const r = Math.max(4, SPEC.ballRadius * scale);
-  for (let i = 0; i < p.length; i++) {
-    if (!balls[i].inPlay) continue;
-    const [x, y] = toPx(p[i][0], p[i][1]);
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = COLOURS[i];
-    ctx.fill();
-    ctx.lineWidth = i === striker ? 2.5 : 1;
-    ctx.strokeStyle = i === striker ? '#FFFFFF' : 'rgba(0,0,0,.45)';
+  const r = Math.max(4, FIELD.ballRadius * scale);
+  pos.forEach((p, i) => {
+    if (!STATE.balls[i].inPlay) return;
+    const [x, y] = px(p[0], p[1]);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = COLOURS[i]; ctx.fill();
+    ctx.lineWidth = i === STATE.striker ? 2.5 : 1;
+    ctx.strokeStyle = i === STATE.striker ? '#FFFFFF' : 'rgba(0,0,0,.5)';
     ctx.stroke();
-  }
+  });
 }
 
 // --- input ----------------------------------------------------------------
 let drag = null;
 
 cv.addEventListener('pointerdown', e => {
-  if (anim) return;                       // no aiming mid-shot
+  if (anim || !STATE || STATE.winner) return;
   cv.setPointerCapture(e.pointerId);
-  const [mx, my] = toM(e.clientX, e.clientY);
-
-  if (e.shiftKey) {
-    let best = -1, bestD = 1e9;
-    balls.forEach((b, i) => {
-      const d = Math.hypot(b.x - mx, b.y - my);
-      if (d < bestD) { bestD = d; best = i; }
-    });
-    if (bestD < 1.2) { drag = { move: best }; return; }
-  }
-  drag = { move: -1, x: mx, y: my };
+  drag = true;
 });
-
 cv.addEventListener('pointermove', e => {
   if (!drag) return;
   const [mx, my] = toM(e.clientX, e.clientY);
-
-  if (drag.move >= 0) {
-    balls[drag.move].x = Math.min(SPEC.width, Math.max(0, mx));
-    balls[drag.move].y = Math.min(SPEC.height, Math.max(0, my));
-    draw();
-    return;
-  }
-
-  const s = balls[striker];
-  draw(null, { dx: mx - s.x, dy: my - s.y });
-  const power = powerFor(mx - s.x, my - s.y);
-  statusEl.textContent = power.toFixed(2) + ' m/s';
+  const me = STATE.balls[STATE.striker];
+  draw(null, { dx: mx - me.x, dy: my - me.y });
+  msg.textContent = powerFor(mx - me.x, my - me.y).toFixed(2) + ' m/s';
 });
-
-cv.addEventListener('pointerup', e => {
+cv.addEventListener('pointerup', async e => {
   if (!drag) return;
-  const wasMove = drag.move >= 0;
-  const [mx, my] = toM(e.clientX, e.clientY);
   drag = null;
-  if (wasMove) { draw(); return; }
-
-  const s = balls[striker];
-  const dx = mx - s.x, dy = my - s.y;
-  if (Math.hypot(dx, dy) < 0.3) { draw(); return; }   // a tap, not a shot
-  shoot(dx, dy, powerFor(dx, dy));
+  const [mx, my] = toM(e.clientX, e.clientY);
+  const me = STATE.balls[STATE.striker];
+  const dx = mx - me.x, dy = my - me.y;
+  if (Math.hypot(dx, dy) < 0.25) { draw(); return; }
+  await play(dx, dy, powerFor(dx, dy));
 });
 
-// Drag length maps to power, saturating at the slider's maximum. A third of
-// the court's length is a full-strength strike.
 function powerFor(dx, dy) {
-  const maxDrag = SPEC.width / 3;
-  const t = Math.min(1, Math.hypot(dx, dy) / maxDrag);
+  const t = Math.min(1, Math.hypot(dx, dy) / (FIELD.width / 3));
   return t * +document.getElementById('rP').value;
 }
 
-// --- shooting -------------------------------------------------------------
-async function shoot(dx, dy, power) {
-  lastShot = { dx, dy, power, from: balls.map(b => ({ ...b })) };
-  statusEl.textContent = 'simulating…';
-
+// --- playing --------------------------------------------------------------
+async function play(dx, dy, power) {
+  msg.textContent = 'simulating…';
   let res;
-  try {
-    res = await fetch('/api/shot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ balls, striker, dx, dy, power, spec: SPEC })
-    }).then(r => r.json());
-  } catch (err) {
-    statusEl.textContent = 'server not reachable — is the lab still running?';
-    return;
+  try { res = await j('/api/play', { dx, dy, power }); }
+  catch { msg.textContent = 'server not reachable'; return; }
+
+  const after = res.state;
+  anim = { frames: res.frames, i: 0 };
+  await new Promise(done => {
+    (function tick() {
+      const f = anim.frames[Math.min(anim.i | 0, anim.frames.length - 1)];
+      const p = [];
+      for (let k = 0; k < f.length; k += 2) p.push([f[k], f[k + 1]]);
+      draw(p);
+      anim.i += +document.getElementById('rS').value;
+      if (anim.i < anim.frames.length) requestAnimationFrame(tick);
+      else { anim = null; done(); }
+    })();
+  });
+
+  STATE = after;
+  render();
+
+  const bits = [];
+  if (res.scored.length) bits.push('scored ' + res.scored.join(' + '));
+  if (res.roqueted >= 0) bits.push('roquet on ' + NAMES[res.roqueted]);
+  if (res.faulted) bits.push('fault — croqueted ball off the lawn');
+  else if (res.wentOut) bits.push('off the lawn');
+  if (res.peggedOut) bits.push('pegged out');
+  if (res.turnEnded) bits.push('turn over');
+  msg.textContent = bits.length ? bits.join(' · ') : 'nothing doing · turn over';
+}
+
+// --- rendering the sidebar -----------------------------------------------
+function render() {
+  const s = STATE;
+  if (s.winner) {
+    turnEl.textContent = s.winner.map(i => NAMES[i]).join(' & ') + ' win';
+  } else {
+    const me = s.balls[s.striker];
+    turnEl.textContent = NAMES[s.striker] + ' to play — for ' + me.target +
+      (s.stroke === 'Croquet' ? ' (croquet stroke)' : '');
   }
 
-  play(res);
-}
+  document.getElementById('tbl').innerHTML = s.balls.map((b, i) => `
+    <tr data-striker="${i === s.striker}">
+      <td><span class="sw" style="background:${COLOURS[i]}"></span>${NAMES[i]}</td>
+      <td>${b.inPlay ? b.target : 'round'}</td>
+      <td class="dead">${b.dead.length ? b.dead.map(d => NAMES[d]).join(', ') : '—'}</td>
+    </tr>`).join('');
 
-function play(res) {
-  anim = { frames: res.frames, i: 0 };
-  const speed = () => +document.getElementById('rS').value;
-
-  (function tick() {
-    if (!anim) return;
-    const f = anim.frames[Math.min(anim.i | 0, anim.frames.length - 1)];
-    const pos = [];
-    for (let i = 0; i < f.length; i += 2) pos.push([f[i], f[i + 1]]);
-    draw(pos);
-
-    anim.i += speed();
-    if (anim.i < anim.frames.length) { requestAnimationFrame(tick); return; }
-
-    // Settle the model on the final frame so the next shot starts from where
-    // the balls actually stopped.
-    const last = anim.frames[anim.frames.length - 1];
-    for (let i = 0; i < balls.length; i++) {
-      balls[i].x = last[i * 2];
-      balls[i].y = last[i * 2 + 1];
-    }
-    anim = null;
-    draw();
-    report(res);
-  })();
-}
-
-function report(res) {
-  const rows = [
-    ['Time', res.seconds.toFixed(2) + ' s'],
-    ['Frames', res.frames.length]
-  ];
-  res.travelled.forEach((d, i) => {
-    if (d > 0.001) rows.push([NAMES[i], d.toFixed(2) + ' m' + (res.wentOut[i] ? ' · OUT' : '')]);
-  });
-  if (!res.settled) rows.push(['⚠', 'never came to rest']);
-
-  document.querySelector('#readout tbody').innerHTML =
-    rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('');
-  statusEl.textContent = 'drag from a ball to aim';
+  draw();
 }
 
 // --- controls -------------------------------------------------------------
-function bindSlider(id, out, key, fmt) {
+function slider(id, out, fmt, onChange) {
   const el = document.getElementById(id), lbl = document.getElementById(out);
-  const apply = () => {
-    if (key) SPEC[key] = +el.value;
-    lbl.textContent = fmt(+el.value);
-  };
+  const apply = () => { lbl.textContent = fmt(+el.value); if (onChange) onChange(); };
   el.addEventListener('input', apply);
   apply();
 }
-bindSlider('rF', 'vF', 'friction',    v => v.toFixed(2));
-bindSlider('rR', 'vR', 'restitution', v => v.toFixed(2));
-bindSlider('rP', 'vP', null,          v => v.toFixed(1) + ' m/s');
-bindSlider('rS', 'vS', null,          v => v.toFixed(2) + '×');
-
-const picker = document.getElementById('picker');
-picker.innerHTML = COLOURS.map((c, i) =>
-  `<button class="bb" data-i="${i}" aria-pressed="${i === 0}"
-     style="background:${c}" title="${NAMES[i]}"></button>`).join('');
-picker.addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  striker = +b.dataset.i;
-  [...picker.children].forEach((c, i) =>
-    c.setAttribute('aria-pressed', String(i === striker)));
-  draw();
+const pushFeel = () => j('/api/feel', {
+  friction: +document.getElementById('rF').value,
+  restitution: +document.getElementById('rR').value,
+  obstacleRestitution: +document.getElementById('rO').value
 });
+slider('rF', 'vF', v => v.toFixed(2), pushFeel);
+slider('rR', 'vR', v => v.toFixed(2), pushFeel);
+slider('rO', 'vO', v => v.toFixed(2), pushFeel);
+slider('rP', 'vP', v => v.toFixed(1) + ' m/s');
+slider('rS', 'vS', v => v.toFixed(2) + '×');
 
-document.getElementById('reset').addEventListener('click', () => {
+async function newGame(n) {
   if (anim) return;
-  balls = startPositions();
-  draw();
-});
-
-document.getElementById('replay').addEventListener('click', () => {
-  if (anim || !lastShot) return;
-  balls = lastShot.from.map(b => ({ ...b }));
-  shoot(lastShot.dx, lastShot.dy, lastShot.power);
-});
+  STATE = await j('/api/new', { balls: n });
+  await pushFeel();
+  STATE = await j('/api/state');
+  render();
+  msg.textContent = 'drag to aim';
+}
+document.getElementById('new4').addEventListener('click', () => newGame(4));
+document.getElementById('new6').addEventListener('click', () => newGame(6));
 
 window.addEventListener('resize', layout);
-layout();
+
+(async function boot() {
+  FIELD = await j('/api/field');
+  STATE = await j('/api/state');
+  layout();
+  render();
+})();
 </script>
 </body>
 </html>

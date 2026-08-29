@@ -34,6 +34,13 @@ namespace Croquet.Core
         public double Restitution = 0.8;
 
         /// <summary>
+        /// Restitution against a hoop upright or a peg. Lower than ball-to-ball:
+        /// wire flexes and the ground takes some of it, so a ball that rattles
+        /// a hoop should lose noticeably more than one that hits a ball.
+        /// </summary>
+        public double ObstacleRestitution = 0.5;
+
+        /// <summary>
         /// Below this speed a ball is treated as stopped, in metres per second.
         /// Without it, friction leaves balls creeping forever at ever-smaller
         /// velocities and a turn never ends.

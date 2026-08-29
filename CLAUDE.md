@@ -72,14 +72,40 @@ the suite red. Assert things that hold for any feel — energy leaves the system
 balls never overlap, a shot replays identically — not "the ball stops at 12.4
 metres".
 
+## How a shot resolves
+
+Worth reading once, because the layering is the whole design.
+
+`Sim` knows nothing about croquet. It rolls balls, bounces them off each
+other and off hoop uprights and pegs, and records an ordered list of
+`ShotEvent`s — contacts, hoop crossings, peg hits, going out — each stamped
+with the substep it happened on.
+
+`Game` never looks at a velocity. It reads those events and applies the rules.
+**Order is why the events are stamped**: running a wicket clears your deadness,
+so a ball you were dead on is a live roquet if the wicket came first in the
+same stroke and nothing at all if it did not. Final positions cannot tell
+those two apart.
+
+Whether a hoop was *run* is likewise not a question about final position. A
+ball can pass through and roll back out, or arrive on the far side round the
+outside. So crossings are counted signed, only when they pass between the
+uprights, and the net is read at the end of the shot.
+
+The turn: a roquet owes a croquet stroke **and** a continuation; a point owes a
+continuation; earn nothing and the turn passes. Going out, pegging out, or
+sending the croqueted ball off the lawn ends it regardless.
+
 ## Current state
 
-Physics: rolling with friction, ball-to-ball contact with restitution,
-substepping against tunnelling, boundary detection.
+Done and tested: rolling, contact, hoops and pegs as obstacles, the
+nine-wicket layout, running hoops in the right direction, the full turn state
+machine, deadness, pegging out, sides and winning.
 
-Not built yet: hoops and the peg, the rules/turn state machine, shot input,
-the Unity project, AI, UI.
+Not built yet: the Unity project, AI, shot preview, out-of-bounds replacement
+(a ball currently stops on the line rather than coming back in a foot), and
+the finer croquet-stroke placements — the lab always places the striker on the
+side it approached from.
 
-The nine-wicket course and deadness rules are already worked out in the
-scorekeeper app at `../Croquet Score App/index.html` — `COURSE` and the
-deadness handling there are the spec to port.
+The scorekeeper app at `../Croquet Score App/index.html` was the spec for the
+course and deadness; `Course.Labels` here mirrors its `COURSE`.
