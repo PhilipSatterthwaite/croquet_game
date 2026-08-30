@@ -17,23 +17,50 @@ namespace Croquet.Core
         Croquet
     }
 
+    /// <summary>
+    /// What the striker does with the stroke it owes after a roquet. All three
+    /// place the striker against (or a mallet head from) the ball it hit; they
+    /// differ in what moves afterwards.
+    /// </summary>
+    public enum CroquetStyle
+    {
+        /// <summary>
+        /// Placed a mallet head clear of the roqueted ball, then struck. Only
+        /// the striker travels — nothing is sent.
+        /// </summary>
+        Continue,
+
+        /// <summary>
+        /// Placed touching, at whatever angle the striker chooses, and struck.
+        /// Both balls travel, and the angle between them is the choice.
+        /// </summary>
+        Split,
+
+        /// <summary>
+        /// Placed touching as for a split, but the striker stays put and all of
+        /// it goes into the other ball. The way to put a ball somewhere without
+        /// giving up your own position.
+        /// </summary>
+        Send
+    }
+
     /// <summary>The rules-side state of one ball. Physics lives in Ball.</summary>
     public sealed class BallState
     {
         /// <summary>How far round the course: 0 is for wicket 1, 16 is pegged out.</summary>
         public int Point;
 
+        /// <summary>
+        /// False until this ball's first turn comes round. Balls are not laid
+        /// out on the lawn at the start; each one enters from the starting spot
+        /// when it is first played.
+        /// </summary>
+        public bool Started;
+
         /// <summary>Balls this one has roqueted since it last ran a wicket.</summary>
         public readonly HashSet<int> Dead = new HashSet<int>();
 
         public bool Finished => Course.IsFinished(Point);
-
-        public BallState Clone()
-        {
-            var c = new BallState { Point = Point };
-            foreach (var d in Dead) c.Dead.Add(d);
-            return c;
-        }
     }
 
     /// <summary>What a stroke produced. Purely a report; the game is already updated.</summary>
@@ -96,9 +123,51 @@ namespace Croquet.Core
         {
             World = world;
             States = new BallState[world.Balls.Length];
-            for (int i = 0; i < States.Length; i++) States[i] = new BallState();
+            for (int i = 0; i < States.Length; i++)
+            {
+                States[i] = new BallState();
+                world.Balls[i].InPlay = false;      // nothing is on the lawn yet
+            }
             Side = side;
             Striker = 0;
+            EnterLawn(Striker);
+        }
+
+        /// <summary>
+        /// Brings a ball onto the lawn for its first stroke. Every ball starts
+        /// from the same spot, so if the last one to start has not moved off it
+        /// yet the newcomer is nudged clear rather than placed on top of it.
+        /// </summary>
+        void EnterLawn(int i)
+        {
+            if (States[i].Started || States[i].Finished) return;
+
+            States[i].Started = true;
+            World.Balls[i].InPlay = true;
+            World.Balls[i].Pos = FreeStartSpot(i);
+        }
+
+        Vec2 FreeStartSpot(int forBall)
+        {
+            var spot = World.Field.StartSpot(World.Spec);
+            double step = World.Spec.BallRadius * 2.2;
+
+            for (int k = 0; k < 40; k++)
+            {
+                // The spot itself first, then alternating either side of it.
+                int rank = (k + 1) / 2;
+                double dy = (k % 2 == 0 ? 1 : -1) * rank * step;
+                var p = new Vec2(spot.X, spot.Y + dy);
+
+                bool clear = true;
+                for (int j = 0; j < World.Balls.Length && clear; j++)
+                {
+                    if (j == forBall || !World.Balls[j].InPlay) continue;
+                    if ((World.Balls[j].Pos - p).LengthSq < (step * step)) clear = false;
+                }
+                if (clear) return p;
+            }
+            return spot;
         }
 
         public BallState Current => States[Striker];
@@ -122,11 +191,51 @@ namespace Croquet.Core
         public StrokeResult Play(Vec2 direction, double power)
         {
             if (Winner != null) throw new InvalidOperationException("the game is over");
+            if (Stroke == StrokeKind.Croquet)
+                throw new InvalidOperationException("a croquet stroke is owed; use PlayCroquet");
 
             World.ClearShot();
             World.Balls[Striker].Vel = direction.Normalized * power;
             Sim.Settle(World);
 
+            return Resolve();
+        }
+
+        /// <summary>
+        /// Takes the croquet stroke owed by a roquet.
+        ///
+        /// <paramref name="placement"/> is the direction from the roqueted ball
+        /// to where the striker is set down — that angle, against the aim, is
+        /// what decides where the two balls part company on a split.
+        /// </summary>
+        public StrokeResult PlayCroquet(CroquetStyle style, Vec2 placement,
+                                        Vec2 aim, double power)
+        {
+            if (Winner != null) throw new InvalidOperationException("the game is over");
+            if (Stroke != StrokeKind.Croquet)
+                throw new InvalidOperationException("no croquet stroke is owed");
+
+            int other = CroquetFrom;
+
+            Vec2 n = placement.Normalized;
+            if (n.LengthSq == 0) n = new Vec2(-1, 0);
+
+            double gap = World.Spec.BallRadius * 2
+                       + (style == CroquetStyle.Continue ? World.Spec.MalletHead : 0);
+            World.Balls[Striker].Pos = World.Balls[other].Pos + n * gap;
+
+            World.ClearShot();
+
+            // A send puts everything into the other ball and leaves the striker
+            // standing. Modelling it as "strike the other ball" rather than as
+            // a very heavy follow-through keeps the striker exactly where it
+            // was put, which is the whole point of the stroke.
+            if (style == CroquetStyle.Send)
+                World.Balls[other].Vel = aim.Normalized * power;
+            else
+                World.Balls[Striker].Vel = aim.Normalized * power;
+
+            Sim.Settle(World);
             return Resolve();
         }
 
@@ -232,31 +341,33 @@ namespace Croquet.Core
         }
 
         /// <summary>
-        /// Where the striker's ball must be placed for a croquet stroke:
-        /// touching the roqueted ball, on the side the striker chooses.
+        /// Where the striker would be set down for this croquet stroke, without
+        /// committing to it. For drawing the preview while the player chooses.
         /// </summary>
-        public Vec2 CroquetPlacement(Vec2 fromDirection)
+        public Vec2 CroquetPlacement(CroquetStyle style, Vec2 placement)
         {
             if (Stroke != StrokeKind.Croquet)
                 throw new InvalidOperationException("no croquet stroke is owed");
 
-            Vec2 n = fromDirection.Normalized;
+            Vec2 n = placement.Normalized;
             if (n.LengthSq == 0) n = new Vec2(-1, 0);
-            return World.Balls[CroquetFrom].Pos + n * (World.Spec.BallRadius * 2);
-        }
-
-        /// <summary>Places the striker for the croquet stroke it owes.</summary>
-        public void TakeCroquet(Vec2 fromDirection)
-        {
-            World.Balls[Striker].Pos = CroquetPlacement(fromDirection);
+            double gap = World.Spec.BallRadius * 2
+                       + (style == CroquetStyle.Continue ? World.Spec.MalletHead : 0);
+            return World.Balls[CroquetFrom].Pos + n * gap;
         }
 
         void NextStriker()
         {
+            // Skips balls that are ROUND, not balls that are off the lawn --
+            // a ball that has not started yet is still due its turn, and gets
+            // brought on when that turn arrives.
             for (int k = 1; k <= States.Length; k++)
             {
                 int j = (Striker + k) % States.Length;
-                if (World.Balls[j].InPlay) { Striker = j; return; }
+                if (States[j].Finished) continue;
+                Striker = j;
+                EnterLawn(j);
+                return;
             }
         }
 

@@ -11,6 +11,11 @@ namespace Croquet.Core.Tests
     /// </summary>
     public class GameTests
     {
+        /// <summary>
+        /// A game with every ball already on the lawn at a chosen spot. Balls
+        /// normally come on one at a time as their first turn arrives, which is
+        /// exactly what these tests do not want to set up each time.
+        /// </summary>
         static Game NewGame(int balls = 4, int[] side = null, params (double x, double y)[] at)
         {
             var f = Field.NineWicket();
@@ -19,8 +24,22 @@ namespace Croquet.Core.Tests
             for (int i = 0; i < balls; i++)
                 arr[i] = new Ball(i < at.Length ? new Vec2(at[i].x, at[i].y)
                                                 : new Vec2(1 + i * 0.9, 1.0));
-            return new Game(new World(arr, f, c), side);
+            var g = new Game(new World(arr, f, c), side);
+
+            for (int i = 0; i < balls; i++)
+            {
+                g.States[i].Started = true;
+                g.World.Balls[i].InPlay = true;
+                g.World.Balls[i].Pos = i < at.Length ? new Vec2(at[i].x, at[i].y)
+                                                     : new Vec2(1 + i * 0.9, 1.0);
+            }
+            return g;
         }
+
+        /// <summary>A game left as the rules make it: nothing on the lawn yet.</summary>
+        static Game FreshGame(int balls = 4) =>
+            new Game(new World(Enumerable.Range(0, balls).Select(_ => new Ball(Vec2.Zero)).ToArray(),
+                               Field.NineWicket(), new CourtSpec()));
 
         /// <summary>Places a ball a short way in front of the hoop for a point.</summary>
         static Vec2 InFrontOf(Field f, int point, double back = 0.45)
@@ -112,10 +131,12 @@ namespace Croquet.Core.Tests
         [Fact]
         public void A_pegged_out_ball_is_skipped_in_the_rotation()
         {
-            var g = NewGame();
+            // Sides, because with none the first ball round wins outright and
+            // there would be no turn left to pass.
+            var g = NewGame(4, new[] { 0, 1, 0, 1 });
             var f = g.World.Field;
-            g.States[1].Point = Field.HomePegPoint;
-            g.World.Balls[1].InPlay = false;      // already gone
+            g.States[1].Point = Field.TotalPoints;   // round, not merely near the end
+            g.World.Balls[1].InPlay = false;
 
             var h = f.Hoops[0];
             g.World.Balls[0].Pos = new Vec2(h.Center.X - 0.45, h.Center.Y + 1.5);
@@ -208,26 +229,84 @@ namespace Croquet.Core.Tests
         }
 
         [Fact]
-        public void A_croquet_stroke_starts_touching_the_roqueted_ball()
+        public void A_split_and_a_send_start_touching_the_roqueted_ball()
         {
-            var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0) });
-            g.Play(new Vec2(1, 0), 3.0);
-            Assert.Equal(StrokeKind.Croquet, g.Stroke);
+            foreach (var style in new[] { CroquetStyle.Split, CroquetStyle.Send })
+            {
+                var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0) });
+                g.Play(new Vec2(1, 0), 3.0);
 
-            g.TakeCroquet(new Vec2(-1, 0));
-
-            double gap = (g.World.Balls[0].Pos - g.World.Balls[1].Pos).Length;
-            Assert.Equal(g.World.Spec.BallRadius * 2, gap, 9);
+                var at = g.CroquetPlacement(style, new Vec2(-1, 0));
+                double gap = (at - g.World.Balls[1].Pos).Length;
+                Assert.Equal(g.World.Spec.BallRadius * 2, gap, 9);
+            }
         }
 
         [Fact]
-        public void After_the_croquet_stroke_a_continuation_is_owed()
+        public void A_continue_stroke_stands_a_mallet_head_clear()
+        {
+            var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0) });
+            g.Play(new Vec2(1, 0), 3.0);
+
+            var at = g.CroquetPlacement(CroquetStyle.Continue, new Vec2(-1, 0));
+            double gap = (at - g.World.Balls[1].Pos).Length;
+
+            Assert.Equal(g.World.Spec.BallRadius * 2 + g.World.Spec.MalletHead, gap, 9);
+        }
+
+        [Fact]
+        public void A_split_sends_both_balls()
         {
             var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0), (2.0, 13.0), (3.0, 13.0) });
             g.Play(new Vec2(1, 0), 3.0);
-            g.TakeCroquet(new Vec2(-1, 0));
+            var was = g.World.Balls[1].Pos;
 
-            var r = g.Play(new Vec2(1, 0), 2.0);
+            g.PlayCroquet(CroquetStyle.Split, new Vec2(-1, 0), new Vec2(1, 0), 3.0);
+
+            Assert.True(g.World.Balls[1].Pos.X > was.X + 0.1, "the croqueted ball should travel");
+            Assert.True(g.World.Balls[0].Pos.X > was.X - 0.2, "and so should the striker");
+        }
+
+        [Fact]
+        public void A_send_moves_the_other_ball_and_leaves_the_striker()
+        {
+            var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0), (2.0, 13.0), (3.0, 13.0) });
+            g.Play(new Vec2(1, 0), 3.0);
+
+            var placed = g.CroquetPlacement(CroquetStyle.Send, new Vec2(-1, 0));
+            var was = g.World.Balls[1].Pos;
+
+            g.PlayCroquet(CroquetStyle.Send, new Vec2(-1, 0), new Vec2(1, 0), 3.0);
+
+            Assert.True(g.World.Balls[1].Pos.X > was.X + 1.0, "the sent ball should travel");
+            Assert.Equal(placed, g.World.Balls[0].Pos);   // the striker never moved
+        }
+
+        [Fact]
+        public void A_continue_stroke_leaves_the_other_ball_alone()
+        {
+            var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0), (2.0, 13.0), (3.0, 13.0) });
+            g.Play(new Vec2(1, 0), 3.0);
+            var was = g.World.Balls[1].Pos;
+
+            // Placed a mallet head clear on the far side, and struck away from
+            // it, so nothing is sent.
+            g.PlayCroquet(CroquetStyle.Continue, new Vec2(1, 0), new Vec2(1, 0), 2.0);
+
+            Assert.Equal(was, g.World.Balls[1].Pos);
+            Assert.True(g.World.Balls[0].Pos.X > was.X, "the striker played on past it");
+        }
+
+        [Theory]
+        [InlineData(CroquetStyle.Continue)]
+        [InlineData(CroquetStyle.Split)]
+        [InlineData(CroquetStyle.Send)]
+        public void Every_croquet_stroke_owes_a_continuation(CroquetStyle style)
+        {
+            var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0), (2.0, 13.0), (3.0, 13.0) });
+            g.Play(new Vec2(1, 0), 3.0);
+
+            var r = g.PlayCroquet(style, new Vec2(-1, 0), new Vec2(1, 0), 1.2);
 
             Assert.False(r.TurnEnded);
             Assert.Equal(StrokeKind.Ordinary, g.Stroke);
@@ -235,16 +314,85 @@ namespace Croquet.Core.Tests
         }
 
         [Fact]
+        public void An_ordinary_stroke_cannot_be_played_while_croquet_is_owed()
+        {
+            var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0) });
+            g.Play(new Vec2(1, 0), 3.0);
+
+            Assert.Throws<System.InvalidOperationException>(() => g.Play(new Vec2(1, 0), 1.0));
+        }
+
+        [Fact]
         public void A_second_roquet_on_the_same_ball_in_one_turn_ends_it()
         {
             var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0), (2.0, 13.0), (3.0, 13.0) });
-            g.Play(new Vec2(1, 0), 3.0);          // roquet
-            g.TakeCroquet(new Vec2(-1, 0));
-            g.Play(new Vec2(1, 0), 0.8);          // croquet stroke, ball 1 pushed on
-            var r = g.Play(new Vec2(1, 0), 3.0);  // continuation, hits it again
+            g.Play(new Vec2(1, 0), 3.0);                                        // roquet
+            g.PlayCroquet(CroquetStyle.Split, new Vec2(-1, 0), new Vec2(1, 0), 0.8);
+            var r = g.Play(new Vec2(1, 0), 3.0);                                // continuation
 
             Assert.Equal(-1, r.Roqueted);
             Assert.True(r.TurnEnded);
+        }
+
+        // ---- coming onto the lawn -----------------------------------------
+
+        [Fact]
+        public void Only_the_first_ball_is_on_the_lawn_at_the_start()
+        {
+            var g = FreshGame(4);
+
+            Assert.True(g.World.Balls[0].InPlay);
+            for (int i = 1; i < 4; i++)
+                Assert.False(g.World.Balls[i].InPlay, $"ball {i} should still be off");
+        }
+
+        [Fact]
+        public void Every_ball_starts_from_the_same_spot()
+        {
+            var g = FreshGame(4);
+            var spot = g.World.Field.StartSpot(g.World.Spec);
+            Assert.Equal(spot, g.World.Balls[0].Pos);
+
+            // Play each ball away, so the spot is clear when the next arrives.
+            // Each in a different direction: identical strokes would pile the
+            // balls onto each other and the second one would roquet the first,
+            // which keeps the turn rather than passing it.
+            var away = new[] { new Vec2(0, 1), new Vec2(0, -1), new Vec2(-1, -1) };
+            for (int i = 1; i < 4; i++)
+            {
+                g.Play(away[i - 1], 1.5);
+                Assert.Equal(i, g.Striker);
+                Assert.True(g.World.Balls[i].InPlay);
+                Assert.Equal(spot, g.World.Balls[i].Pos);
+            }
+        }
+
+        [Fact]
+        public void A_ball_coming_on_does_not_land_on_one_already_there()
+        {
+            var g = FreshGame(4);
+            var spot = g.World.Field.StartSpot(g.World.Spec);
+
+            g.Play(new Vec2(0, 1), 0.05);               // barely moves; stays on the spot
+            Assert.Equal(1, g.Striker);
+
+            double apart = (g.World.Balls[1].Pos - g.World.Balls[0].Pos).Length;
+            Assert.True(apart >= g.World.Spec.BallRadius * 2,
+                $"the newcomer was placed {apart:0.###} m from the ball already there");
+            Assert.Equal(spot.X, g.World.Balls[1].Pos.X, 9);
+        }
+
+        [Fact]
+        public void A_ball_that_has_not_started_is_not_in_the_way()
+        {
+            // Ball 1 has not come on, so a stroke through the starting spot
+            // must not be able to hit it.
+            var g = FreshGame(4);
+            g.World.Balls[0].Pos = new Vec2(2.0, g.World.Field.StartSpot(g.World.Spec).Y);
+
+            var r = g.Play(new Vec2(1, 0), 1.0);
+
+            Assert.Equal(-1, r.Roqueted);
         }
 
         // ---- ending the turn ----------------------------------------------

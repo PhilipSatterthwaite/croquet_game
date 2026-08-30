@@ -39,6 +39,8 @@ app.MapGet("/api/field", () =>
         height = spec.Height,
         ballRadius = spec.BallRadius,
         pegRadius = f.PegRadius,
+        malletHead = spec.MalletHead,
+        startSpot = new[] { f.StartSpot(spec).X, f.StartSpot(spec).Y },
         homePeg = new[] { f.HomePeg.X, f.HomePeg.Y },
         turningPeg = new[] { f.TurningPeg.X, f.TurningPeg.Y },
         hoops = f.Hoops.Select(h => new
@@ -83,36 +85,48 @@ app.MapPost("/api/play", (PlayRequest r) =>
 {
     if (game.Winner != null) return Results.BadRequest("the game is over");
 
-    // A croquet stroke starts with the striker placed against the ball it
-    // roqueted. It is placed on the side the striker is already on, which is
-    // the natural read and saves the player an interaction.
-    if (game.Stroke == StrokeKind.Croquet)
-    {
-        var from = game.World.Balls[game.Striker].Pos - game.World.Balls[game.CroquetFrom].Pos;
-        game.TakeCroquet(from);
-    }
-
     int striker = game.Striker;
     StrokeKind was = game.Stroke;
+
+    // Where every ball stands as the stroke begins, and which one is about to
+    // be set moving. A croquet stroke moves the striker to its placement first,
+    // and a send drives the OTHER ball while the striker stands still.
     var before = game.World.Balls.Select(b => b.Pos).ToArray();
+    var wasInPlay = game.World.Balls.Select(b => b.InPlay).ToArray();
+    int moved = striker;
+
+    StrokeResult result;
+    if (was == StrokeKind.Croquet)
+    {
+        if (!Enum.TryParse<CroquetStyle>(r.Style, true, out var style))
+            return Results.BadRequest("a croquet stroke needs a style: continue, split or send");
+
+        var place = new Vec2(r.PlaceX, r.PlaceY);
+        before[striker] = game.CroquetPlacement(style, place);
+        if (style == CroquetStyle.Send) moved = game.CroquetFrom;
+
+        result = game.PlayCroquet(style, place, new Vec2(r.Dx, r.Dy), r.Power);
+    }
+    else
+    {
+        result = game.Play(new Vec2(r.Dx, r.Dy), r.Power);
+    }
 
     // Replay the settled shot frame by frame for the animation. The rules have
-    // already been applied to the world by Play, so the frames are rebuilt from
-    // the same starting state and the same input -- which lands in exactly the
-    // same place, because the sim is deterministic. That equality is asserted
-    // in SimTests.Replay_survives_being_split_across_frames.
+    // already been applied to the world, so the frames are rebuilt from the
+    // same starting state and the same input -- which lands in exactly the same
+    // place, because the sim is deterministic. That equality is asserted in
+    // SimTests.Replay_survives_being_split_across_frames.
     var scratch = new Ball[before.Length];
     for (int i = 0; i < before.Length; i++)
     {
         scratch[i] = new Ball(before[i]);
-        scratch[i].InPlay = game.World.Balls[i].InPlay;
+        scratch[i].InPlay = wasInPlay[i];
     }
-
-    var result = game.Play(new Vec2(r.Dx, r.Dy), r.Power);
 
     var scratchWorld = new World(scratch, game.World.Field, spec);
     scratchWorld.ClearShot();
-    scratch[striker].Vel = new Vec2(r.Dx, r.Dy).Normalized * r.Power;
+    scratch[moved].Vel = new Vec2(r.Dx, r.Dy).Normalized * r.Power;
 
     var frames = new List<double[]>(256) { Snap(scratch) };
     int steps = 0;
@@ -175,6 +189,8 @@ object Snapshot() => new
         x = b.Pos.X,
         y = b.Pos.Y,
         inPlay = b.InPlay,
+        started = game.States[i].Started,
+        finished = game.States[i].Finished,
         point = game.States[i].Point,
         target = Course.IsFinished(game.States[i].Point)
                  ? "round" : Course.Labels[game.States[i].Point],
@@ -182,20 +198,22 @@ object Snapshot() => new
     })
 };
 
+// Positions are left to Game: balls are not laid out on the lawn at all, and
+// each comes on from the starting spot as its first turn arrives.
 static Game NewGame(int count, CourtSpec spec)
 {
-    var field = Field.NineWicket();
     var balls = new Ball[count];
-
-    // Nine-wicket starts from between the home peg and the first wicket,
-    // spread across the centre line so nobody starts touching.
-    double x = (field.HomePeg.X + field.Hoops[0].Center.X) / 2;
-    double y0 = field.HomePeg.Y - (count - 1) * 0.16;
-    for (int i = 0; i < count; i++) balls[i] = new Ball(new Vec2(x, y0 + i * 0.32));
-
-    return new Game(new World(balls, field, spec));
+    for (int i = 0; i < count; i++) balls[i] = new Ball(Vec2.Zero);
+    return new Game(new World(balls, Field.NineWicket(), spec));
 }
 
 record NewRequest(int Balls);
 record FeelRequest(double Friction, double Restitution, double ObstacleRestitution);
-record PlayRequest(double Dx, double Dy, double Power);
+
+/// <param name="Style">continue, split or send — only for a croquet stroke.</param>
+/// <param name="PlaceX">
+/// Direction from the roqueted ball to where the striker is set down. The angle
+/// between this and the aim is what makes a split a split.
+/// </param>
+record PlayRequest(double Dx, double Dy, double Power,
+                   string Style = null, double PlaceX = -1, double PlaceY = 0);

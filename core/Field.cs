@@ -90,7 +90,13 @@ namespace Croquet.Core
         /// symmetric about the middle: the home peg mirrors the turning peg,
         /// hoop 1 mirrors hoop 7, and the two diamonds mirror each other.
         /// </summary>
-        public static Field NineWicket(double hoopGap = 0.17, double wireRadius = 0.006,
+        /// <param name="hoopGap">
+        /// Clear width between the uprights. A real backyard wicket is about
+        /// 0.17 m against a 0.092 m ball — punishingly tight while the game
+        /// logic is still being exercised, so the default is double that.
+        /// Narrow it once the rules stop being the thing under test.
+        /// </param>
+        public static Field NineWicket(double hoopGap = 0.34, double wireRadius = 0.006,
                                        double pegRadius = 0.019)
         {
             const double mid = 25;      // centre line, feet
@@ -129,5 +135,14 @@ namespace Croquet.Core
         /// <summary>Where a ball playing for this point is trying to get to.</summary>
         public Vec2 TargetFor(int point) =>
             IsPeg(point) ? PegFor(point) : Hoops[HoopOfPoint[point]].Center;
+
+        /// <summary>
+        /// Where every ball plays its first stroke from: a mallet's length in
+        /// front of wicket 1, on the centre line. All of them start from the
+        /// same spot, one at a time as their turn first comes round -- they do
+        /// not sit on the lawn in a row waiting.
+        /// </summary>
+        public Vec2 StartSpot(CourtSpec spec) =>
+            new Vec2(Hoops[0].Center.X - spec.MalletLength, Hoops[0].Center.Y);
     }
 }

@@ -53,5 +53,11 @@ namespace Croquet.Core
         /// only records the crossing, and the rules layer does the placing.
         /// </summary>
         public double BoundaryReturn = 0.3048;   // one foot
+
+        /// <summary>Width of a mallet head. The gap left by a continue stroke.</summary>
+        public double MalletHead = 0.23;
+
+        /// <summary>A mallet's length: how far in front of wicket 1 a ball starts.</summary>
+        public double MalletLength = 0.9;
     }
 }
