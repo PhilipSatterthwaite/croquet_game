@@ -8,8 +8,15 @@ with all rules and physics in an engine-free C# core.
 ```sh
 dotnet test                        # the whole core suite, ~0.1s, no editor needed
 dotnet test --filter Roquet        # one test or one class
-dotnet run --project tools/Croquet.Lab    # the playable lab, opens localhost:5055
+
+play croquet                       # the playable lab, opens localhost:5055
+./play.ps1 --no-open               # the same, without a browser
 ```
+
+`play croquet` works from any directory. It is a `play` function in the user's
+PowerShell profile that does nothing but call `play.ps1` here, so this repo
+stays the source of truth for how the lab is launched and the profile never
+needs touching again.
 
 `dotnet test` is the correctness loop — run it after every change to `core/`.
 It needs no Unity, no device, no graphics.
@@ -33,6 +40,7 @@ shape for online play and for the AI's search.
 | `core/` | rules + physics. **No `UnityEngine` reference, ever.** netstandard2.1 so Unity can consume it |
 | `tests/` | xunit against `core/`. net9.0 |
 | `tools/Croquet.Lab/` | dev-only web host for tuning feel. Never ships |
+| `play.ps1` | launches the lab; what `play croquet` calls |
 | `unity/` | the Unity project — rendering, input, UI, audio. Not created yet |
 
 ## The two rules that matter
