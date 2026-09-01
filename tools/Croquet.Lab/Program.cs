@@ -149,6 +149,7 @@ app.MapPost("/api/play", (PlayRequest r) =>
         broughtIn = result.BroughtIn,
         peggedOut = result.PeggedOut,
         shotsLeft = result.ShotsLeft,
+        endedByOutOfBounds = result.EndedByOutOfBounds,
         turnEnded = result.TurnEnded,
         state = Snapshot()
     });
@@ -208,7 +209,8 @@ static Game NewGame(int count, CourtSpec spec)
 {
     var balls = new Ball[count];
     for (int i = 0; i < count; i++) balls[i] = new Ball(Vec2.Zero);
-    return new Game(new World(balls, Field.NineWicket(), spec));
+    // House rules: deadness carries over, and sending a ball out ends the turn.
+    return new Game(new World(balls, Field.NineWicket(), spec), null, new RuleOptions());
 }
 
 record NewRequest(int Balls);

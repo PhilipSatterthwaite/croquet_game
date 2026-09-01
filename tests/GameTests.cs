@@ -12,12 +12,20 @@ namespace Croquet.Core.Tests
     /// </summary>
     public class GameTests
     {
-        /// <summary>A game with every ball already on the lawn at a chosen spot.</summary>
-        static Game NewGame(int balls = 4, int[] side = null, params (double x, double y)[] at)
+        /// <summary>
+        /// A game with every ball already on the lawn at a chosen spot.
+        /// Options default to the house set (carry-over deadness, out of bounds
+        /// ends the turn); tests of the plain rulebook pass RuleOptions.Basic.
+        /// </summary>
+        // Instance, not static: xunit builds a fresh test class per test, so
+        // this cannot leak from one to the next. Null means the house defaults.
+        RuleOptions Opts;
+
+        Game NewGame(int balls = 4, int[] side = null, params (double x, double y)[] at)
         {
             var arr = new Ball[balls];
             for (int i = 0; i < balls; i++) arr[i] = new Ball(Vec2.Zero);
-            var g = new Game(new World(arr, Field.NineWicket(), new CourtSpec()), side);
+            var g = new Game(new World(arr, Field.NineWicket(), new CourtSpec()), side, Opts);
 
             for (int i = 0; i < balls; i++)
             {
@@ -30,9 +38,9 @@ namespace Croquet.Core.Tests
         }
 
         /// <summary>A game left as the rules make it: nothing on the lawn yet.</summary>
-        static Game FreshGame(int balls = 4) =>
+        Game FreshGame(int balls = 4) =>
             new Game(new World(Enumerable.Range(0, balls).Select(_ => new Ball(Vec2.Zero)).ToArray(),
-                               Field.NineWicket(), new CourtSpec()));
+                               Field.NineWicket(), new CourtSpec()), null, Opts);
 
         static Vec2 InFrontOf(Field f, int point, double back = 0.45)
         {
@@ -236,11 +244,11 @@ namespace Croquet.Core.Tests
         }
 
         [Fact]
-        public void Deadness_lapses_at_the_start_of_the_next_turn()
+        public void Deadness_lapses_at_the_start_of_the_next_turn_under_the_basic_rule()
         {
-            // The basic rule: dead until you clear your next wicket OR the
-            // start of your next turn, whichever comes first. Carry-over
-            // deadness is Challenging Option 1 and is not in force.
+            // Basic: dead until you clear your next wicket OR the start of your
+            // next turn, whichever comes first.
+            Opts = RuleOptions.Basic;
             var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0) });
             ParkOthers(g, 0, 1);
 
@@ -254,6 +262,40 @@ namespace Croquet.Core.Tests
 
             Assert.Empty(g.States[0].Dead);
             Assert.True(g.IsAlive(1));
+        }
+
+        [Fact]
+        public void Under_carry_over_deadness_it_survives_the_turn()
+        {
+            // Option 1, and the house default: deadness lifts only when the
+            // ball clears its next wicket -- never merely because a new turn
+            // has begun.
+            var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0) });
+            ParkOthers(g, 0, 1);
+            Assert.True(g.Options.CarryOverDeadness);
+
+            g.Play(new Vec2(1, 0), 3.0);                                  // roquet
+            g.PlayBonus(BonusWay.WhereItLies, Vec2.Zero, new Vec2(0, 1), 0.6);
+            g.Play(new Vec2(0, 1), 0.6);                                  // nothing; turn over
+
+            while (g.Striker != 0) g.Play(new Vec2(0, 1), 0.5);           // round to blue again
+
+            Assert.Contains(1, g.States[0].Dead);
+            Assert.False(g.IsAlive(1));
+        }
+
+        [Fact]
+        public void Carry_over_deadness_still_lifts_on_clearing_a_wicket()
+        {
+            var g = NewGame();
+            ParkOthers(g, 0);
+            Assert.True(g.Options.CarryOverDeadness);
+            g.States[0].Dead.Add(1);
+            g.World.Balls[0].Pos = InFrontOf(g.World.Field, 0);
+
+            g.Play(new Vec2(1, 0), 1.3);
+
+            Assert.Empty(g.States[0].Dead);
         }
 
         [Fact]
@@ -273,7 +315,7 @@ namespace Croquet.Core.Tests
 
         // ---- the four bonus ways ------------------------------------------
 
-        static Game AfterRoquet()
+        Game AfterRoquet()
         {
             var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0) });
             ParkOthers(g, 0, 1);
@@ -399,25 +441,72 @@ namespace Croquet.Core.Tests
 
         // ---- boundaries ---------------------------------------------------
 
-        [Fact]
-        public void Going_out_of_bounds_costs_nothing_and_the_ball_comes_back_in()
+        /// <summary>Runs wicket 3 and carries on off the far end of the lawn.</summary>
+        Game ShotThatRunsOffTheEnd(out StrokeResult r)
         {
-            // Q17: "If I send a ball over the boundary, is there a penalty?
-            // A: No." The ball is replaced a mallet's length in, square to the
-            // line -- and the wicket it scored on the way still stands.
             var g = NewGame();
             ParkOthers(g, 0);
-            var f = g.World.Field;
             g.States[0].Point = 2;
-            g.World.Balls[0].Pos = InFrontOf(f, 2);
+            g.World.Balls[0].Pos = InFrontOf(g.World.Field, 2);
+            r = g.Play(new Vec2(1, 0), 7.0);
+            return g;
+        }
 
-            var r = g.Play(new Vec2(1, 0), 7.0);
+        [Fact]
+        public void Under_the_basic_rule_going_out_costs_nothing()
+        {
+            // Q17: "If I send a ball over the boundary, is there a penalty?
+            // A: No." The wicket it scored on the way still stands, and the
+            // bonus shot that wicket earned is still owed.
+            Opts = RuleOptions.Basic;
+            var g = ShotThatRunsOffTheEnd(out var r);
 
             Assert.Contains(2, r.PointsScored);
             Assert.Contains(0, r.BroughtIn);
+            Assert.False(r.TurnEnded, "the basic rules have no penalty for going out");
+            Assert.False(r.EndedByOutOfBounds);
+        }
+
+        [Fact]
+        public void Under_option_2A_going_out_ends_the_turn()
+        {
+            // The house default. The point still counts and the ball still
+            // comes back in -- but the turn is over, even though the wicket
+            // had earned a bonus shot.
+            var g = ShotThatRunsOffTheEnd(out var r);
+            Assert.True(g.Options.OutOfBoundsEndsTurn);
+
+            Assert.Contains(2, r.PointsScored);
+            Assert.Contains(0, r.BroughtIn);
+            Assert.True(r.EndedByOutOfBounds);
+            Assert.True(r.TurnEnded);
+            Assert.Equal(0, r.ShotsLeft);
+            Assert.Equal(1, g.Striker);
+        }
+
+        [Fact]
+        public void A_ball_that_goes_out_is_replaced_a_mallet_length_in()
+        {
+            var g = ShotThatRunsOffTheEnd(out _);
             Assert.Equal(g.World.Spec.Width - g.World.Spec.BoundaryReturn,
                          g.World.Balls[0].Pos.X, 6);
-            Assert.False(r.TurnEnded, "there is no penalty for going out");
+        }
+
+        [Fact]
+        public void Sending_someone_elses_ball_out_also_ends_the_turn()
+        {
+            // Off the centre line: the turning peg sits on it, and a ball
+            // driven down that lane rebounds off the peg instead of going out.
+            var g = NewGame(at: new[] { (26.0, 13.0), (28.0, 13.0) });
+            ParkOthers(g, 0, 1);
+
+            var r = g.Play(new Vec2(1, 0), 6.0);
+
+            Assert.Equal(1, r.Roqueted);
+
+            Assert.Contains(1, r.BroughtIn);
+            Assert.True(r.EndedByOutOfBounds);
+            Assert.True(r.TurnEnded, "the roquet earned two shots, but the turn is over anyway");
         }
 
         [Fact]

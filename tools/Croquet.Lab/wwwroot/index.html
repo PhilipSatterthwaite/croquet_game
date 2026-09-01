@@ -33,14 +33,12 @@ h1{margin:0;font-size:14px;font-weight:650;letter-spacing:.22em;text-transform:u
   border:1px solid var(--l);border-radius:12px;padding:12px 14px}
 #shot .lbl{font-size:10px;font-weight:650;color:var(--d);letter-spacing:.18em;
   text-transform:uppercase;flex:none}
-#power{flex:1;min-width:120px;height:26px;accent-color:var(--go);margin:0}
+/* A meter, not a control: power comes from pulling the mallet back on the lawn. */
+#meter{flex:1;min-width:120px;height:14px;border-radius:7px;background:var(--g);
+  border:1px solid var(--l);overflow:hidden}
+#meterFill{height:100%;width:0;background:var(--go);transition:width .05s linear}
 #pv{flex:none;width:78px;font-size:13px;font-weight:650;text-align:right;
   font-variant-numeric:tabular-nums}
-#shoot{flex:none;padding:12px 26px;border:none;border-radius:10px;background:var(--go);
-  color:#fff;font:inherit;font-size:14px;font-weight:700;letter-spacing:.1em;
-  text-transform:uppercase;cursor:pointer}
-#shoot:disabled{background:var(--l);color:var(--s);cursor:default}
-#shoot:not(:disabled):active{transform:scale(.98)}
 
 /* bonus-shot chooser */
 #bonus{display:none;margin-top:12px;background:var(--s);border:1px solid var(--l);
@@ -109,9 +107,8 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
 
 <div id="shot">
   <span class="lbl">Power</span>
-  <input type="range" id="power" min="0" max="100" step="1" value="45">
-  <span id="pv">3.2 m/s</span>
-  <button id="shoot">Shoot</button>
+  <div id="meter"><div id="meterFill"></div></div>
+  <span id="pv">0.0 m/s</span>
 </div>
 
 <div id="bonus">
@@ -134,8 +131,9 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
 </div>
 
 <p class="hint">
-  <kbd>drag on the lawn</kbd> to line up the shot, set the <kbd>power</kbd>
-  bar, then <kbd>Shoot</kbd>. The white chevron marks the striker; the dashed
+  <kbd>drag on the lawn</kbd> to line up the shot, then <kbd>drag the mallet
+  back</kbd> behind the ball and release to strike — further back is harder.
+  <kbd>scroll</kbd> to zoom. The white chevron marks the striker; the dashed
   ring marks the hoop it is playing for.
 </p>
 
@@ -172,17 +170,22 @@ const NAMES   = ['Blue', 'Red', 'Black', 'Yellow', 'Green', 'Orange'];
 
 let FIELD = null, STATE = null, anim = null, zoom = 1;
 
-// The shot in hand. Aim is set by dragging on the lawn, power by the bar, and
-// nothing happens until Shoot -- so a shot can be lined up, reconsidered and
-// re-aimed without ever being played by accident.
+// The shot in hand. Aim is set by dragging on the lawn; power by pulling the
+// mallet back behind the ball, which is also what fires it. Aiming and pulling
+// are separate gestures, so a shot can be lined up and reconsidered without
+// ever going off by accident.
 let aim = null;                 // {x,y} unit vector
+let pull = 0;                   // screen px the mallet is drawn back
 let bonus = null;               // {way, place:{x,y}|null, placing:bool}
+
+const MAX_PULL = 190;           // px of drag for full power
+const REST_GAP = 16;            // px the mallet head sits off the ball at rest
+const GRAB = 34;                // px around the mallet that starts a pull
 
 const cv = document.getElementById('court');
 const ctx = cv.getContext('2d');
 const msg = document.getElementById('msg');
 const turnEl = document.getElementById('turn');
-const shootBtn = document.getElementById('shoot');
 
 const j = (url, body) => fetch(url, body ? {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -248,10 +251,15 @@ function draw(positions) {
   ctx.fillStyle = '#3F7A46';
   ctx.fillRect(lx, ly, FIELD.width * scale, FIELD.height * scale);
 
+  // Mown stripes, one mallet-mower width: exactly 6 ft, alternating. They
+  // double as a ruler -- every light band is 6 ft across, so distance can be
+  // read straight off the grass.
+  const STRIPE = 6 * 0.3048;
   ctx.save();
   ctx.beginPath(); ctx.rect(lx, ly, FIELD.width * scale, FIELD.height * scale); ctx.clip();
-  ctx.fillStyle = 'rgba(255,255,255,.045)';
-  for (let m = 0; m < FIELD.width; m += 4) ctx.fillRect(px(m, 0)[0], ly, 2 * scale, FIELD.height * scale);
+  ctx.fillStyle = 'rgba(255,255,255,.05)';
+  for (let m = 0; m < FIELD.width; m += STRIPE * 2)
+    ctx.fillRect(px(m, 0)[0], ly, STRIPE * scale, FIELD.height * scale);
   ctx.restore();
 
   ctx.strokeStyle = '#DCE8DD'; ctx.lineWidth = 1.5;
@@ -289,10 +297,16 @@ function draw(positions) {
   }
 
   const r = Math.max(3, FIELD.ballRadius * scale);
+  const from = positions ? null : strikerPoint();
 
   pos.forEach((p, i) => {
     if (!STATE.balls[i].inPlay) return;
-    const [x, y] = px(p[0], p[1]);
+    // Once a bonus placement is committed the striker IS at the placement, so
+    // it is drawn there rather than left behind with a ghost floating
+    // elsewhere. While still choosing, it stays put and the ghost moves.
+    const placing = bonus && bonus.placing;
+    const at = (from && i === STATE.striker && !placing) ? [from.x, from.y] : p;
+    const [x, y] = px(at[0], at[1]);
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fillStyle = COLOURS[i]; ctx.fill();
     ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.stroke();
@@ -300,93 +314,151 @@ function draw(positions) {
 
   if (positions) return;   // mid-animation: no aiming furniture
 
-  const from = strikerPoint();
-
-  // the ghost of a bonus placement, before it is committed
-  if (from && bonus && bonus.place && bonus.way !== 'whereItLies') {
+  // While still choosing where to sit, the ball stays put and the candidate
+  // spot is a dashed outline.
+  if (from && bonus && bonus.placing && bonus.place) {
     const [gx, gy] = px(from.x, from.y);
     ctx.setLineDash([3, 3]); ctx.lineWidth = 2; ctx.strokeStyle = COLOURS[STATE.striker];
     ctx.beginPath(); ctx.arc(gx, gy, r, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
   }
 
-  // The aim line is a fixed guide, not a power gauge -- power is the bar
-  // below, so the line only ever says WHERE, never HOW HARD.
-  if (from && aim && !STATE.winner) {
-    const [ax, ay] = px(from.x, from.y);
+  if (!from || STATE.winner) return;
+  const [ax, ay] = px(from.x, from.y);
+
+  // The aim line says WHERE and only where; how hard is the mallet behind you.
+  if (aim) {
     const len = Math.max(40, 1.6 * scale);
     ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.lineWidth = 2;
     ctx.setLineDash([7, 5]);
-    ctx.beginPath(); ctx.moveTo(ax, ay);
-    ctx.lineTo(ax + aim.x * len, ay + aim.y * len);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax + aim.x * len, ay + aim.y * len);
     ctx.stroke(); ctx.setLineDash([]);
-    ctx.beginPath();
-    ctx.arc(ax + aim.x * len, ay + aim.y * len, 3.5, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(ax + aim.x * len, ay + aim.y * len, 3.5, 0, Math.PI * 2);
     ctx.fillStyle = '#fff'; ctx.fill();
+
+    drawMallet(ax, ay);
   }
 
-  if (from) {
-    const [x, y] = px(from.x, from.y);
-    const top = y - r - 6, size = Math.max(5, Math.min(10, r * 0.9));
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.moveTo(x, top); ctx.lineTo(x - size, top - size * 1.3); ctx.lineTo(x + size, top - size * 1.3);
-    ctx.closePath(); ctx.fill();
-  }
+  const top = ay - r - 6, size = Math.max(5, Math.min(10, r * 0.9));
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.moveTo(ax, top); ctx.lineTo(ax - size, top - size * 1.3); ctx.lineTo(ax + size, top - size * 1.3);
+  ctx.closePath(); ctx.fill();
 }
 
-// --- aiming / placing -----------------------------------------------------
-function pointAt(e) {
-  const [mx, my] = toM(e.clientX, e.clientY);
+/// Where the mallet head sits, in screen px, given the current pull.
+function malletAt(ax, ay) {
+  const d = REST_GAP + pull;
+  return [ax - aim.x * d, ay - aim.y * d];
+}
 
-  if (bonus && bonus.placing) {
-    const other = STATE.balls[STATE.roquetedBall];
-    bonus.place = { x: mx - other.x, y: my - other.y };
-    draw();
-    return;
-  }
+function drawMallet(ax, ay) {
+  const [mx, my] = malletAt(ax, ay);
+  const ang = Math.atan2(aim.y, aim.x);
+  const head = Math.max(16, Math.min(30, 0.34 * scale));
+  const thick = Math.max(7, head * 0.42);
+
+  ctx.save();
+  ctx.translate(mx, my);
+  ctx.rotate(ang);
+
+  // shaft, running back from the head away from the ball
+  ctx.strokeStyle = 'rgba(240,235,220,.75)';
+  ctx.lineWidth = Math.max(2, thick * 0.28);
+  ctx.beginPath(); ctx.moveTo(-thick / 2, 0); ctx.lineTo(-thick / 2 - head * 0.9, 0); ctx.stroke();
+
+  // head: long axis across the line of the shot, as a real mallet face is
+  ctx.fillStyle = pull > 4 ? '#F6EBD2' : 'rgba(246,235,210,.72)';
+  ctx.strokeStyle = 'rgba(60,45,20,.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(-thick / 2, -head / 2, thick, head, 3);
+  else ctx.rect(-thick / 2, -head / 2, thick, head);
+  ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+// --- aiming, placing, pulling ---------------------------------------------
+const maxPowerEl = document.getElementById('rP');
+const powerMs = () => (pull / MAX_PULL) * +maxPowerEl.value;
+
+let mode = null;                // 'aim' | 'place' | 'pull'
+
+function screenOfStriker() {
   const from = strikerPoint();
-  if (!from) return;
-  aim = norm({ x: mx - from.x, y: my - from.y });
-  draw();
-  updateShoot();
+  return from ? px(from.x, from.y) : null;
 }
 
-let dragging = false;
+function canShoot() {
+  if (!STATE || STATE.winner || anim) return false;
+  if (STATE.stroke === 'Bonus') {
+    if (!bonus) return false;
+    if (bonus.placing) return false;
+  }
+  return !!aim;
+}
+
 cv.addEventListener('pointerdown', e => {
   if (anim || !STATE || STATE.winner) return;
   cv.setPointerCapture(e.pointerId);
-  dragging = true;
-  pointAt(e);
+
+  if (bonus && bonus.placing) { mode = 'place'; onMove(e); return; }
+
+  // Grabbing the mallet pulls; anywhere else re-aims. Without this the two
+  // gestures would fight, and every attempt to pull back would swing the aim
+  // round to point behind the ball.
+  const s = screenOfStriker();
+  if (aim && s) {
+    const [mx, my] = malletAt(s[0], s[1]);
+    const r = cv.getBoundingClientRect();
+    if (Math.hypot(e.clientX - r.left - mx, e.clientY - r.top - my) < GRAB) {
+      mode = 'pull';
+      return;
+    }
+  }
+  mode = 'aim';
+  onMove(e);
 });
-cv.addEventListener('pointermove', e => { if (dragging) pointAt(e); });
-cv.addEventListener('pointerup', () => { dragging = false; });
 
-// --- the shot bar ---------------------------------------------------------
-const powerEl = document.getElementById('power');
-const maxPowerEl = document.getElementById('rP');
-const powerMs = () => (+powerEl.value / 100) * +maxPowerEl.value;
+function onMove(e) {
+  const rect = cv.getBoundingClientRect();
 
-function updateShoot() {
-  const owed = STATE && STATE.stroke === 'Bonus';
-  const needsWay = owed && !bonus;
-  const needsPlace = owed && bonus && bonus.way !== 'whereItLies' && !bonus.place;
-  const ready = STATE && !STATE.winner && !anim && aim && !needsWay && !needsPlace
-                && powerMs() > 0.05;
-  shootBtn.disabled = !ready;
-  document.getElementById('pv').textContent = powerMs().toFixed(1) + ' m/s';
+  if (mode === 'place') {
+    const [wx, wy] = toM(e.clientX, e.clientY);
+    const other = STATE.balls[STATE.roquetedBall];
+    bonus.place = { x: wx - other.x, y: wy - other.y };
+    draw();
+    return;
+  }
 
-  if (!STATE || STATE.winner) return;
-  if (needsWay) msg.textContent = 'choose how to take the first bonus shot';
-  else if (needsPlace) msg.textContent = 'click around ' + NAMES[STATE.roquetedBall] + ' to place your ball';
-  else if (!aim) msg.textContent = 'drag on the lawn to line up';
-  else if (ready) msg.textContent = 'ready — set the power and shoot';
+  const s = screenOfStriker();
+  if (!s) return;
+  const dx = e.clientX - rect.left - s[0];
+  const dy = e.clientY - rect.top - s[1];
+
+  if (mode === 'aim') {
+    if (Math.hypot(dx, dy) < 4) return;         // too close to mean a direction
+    aim = norm({ x: dx, y: dy });
+    pull = 0;
+  } else if (mode === 'pull') {
+    // Only the component straight behind the ball counts, so sliding sideways
+    // while pulling does not quietly change the power.
+    pull = Math.max(0, Math.min(MAX_PULL, -(dx * aim.x + dy * aim.y) - REST_GAP));
+  }
+  draw();
+  updateShot();
 }
-powerEl.addEventListener('input', updateShoot);
-maxPowerEl.addEventListener('input', updateShoot);
 
-shootBtn.addEventListener('click', async () => {
-  if (shootBtn.disabled) return;
+cv.addEventListener('pointermove', e => { if (mode) onMove(e); });
+
+cv.addEventListener('pointerup', async () => {
+  const was = mode;
+  mode = null;
+  if (was !== 'pull') return;
+
+  if (pull < 6) { pull = 0; draw(); updateShot(); return; }   // let go: never mind
+  if (!canShoot()) { pull = 0; draw(); updateShot(); return; }
+
   const body = { dx: aim.x, dy: aim.y, power: powerMs() };
   if (STATE.stroke === 'Bonus') {
     body.way = bonus.way;
@@ -396,15 +468,38 @@ shootBtn.addEventListener('click', async () => {
   await play(body);
 });
 
+// Scroll to zoom, which is the one gesture that should never be mistaken for
+// aiming -- so it is handled apart from the pointer entirely.
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12));
+}, { passive: false });
+
+function updateShot() {
+  const ms = powerMs();
+  document.getElementById('pv').textContent = ms.toFixed(1) + ' m/s';
+  document.getElementById('meterFill').style.width =
+    Math.min(100, (pull / MAX_PULL) * 100) + '%';
+
+  if (!STATE || STATE.winner) return;
+  const owed = STATE.stroke === 'Bonus';
+  if (owed && !bonus) msg.textContent = 'choose how to take the first bonus shot';
+  else if (owed && bonus && bonus.placing)
+    msg.textContent = 'drag around ' + NAMES[STATE.roquetedBall] + ', then Place here';
+  else if (!aim) msg.textContent = 'drag on the lawn to line up';
+  else if (pull > 6) msg.textContent = 'release to strike';
+  else msg.textContent = 'pull the mallet back to strike';
+}
+maxPowerEl.addEventListener('input', updateShot);
+
 async function play(body) {
-  shootBtn.disabled = true;
   msg.textContent = 'simulating…';
   let res;
   try { res = await j('/api/play', body); }
   catch { msg.textContent = 'server not reachable'; return; }
   if (!res || !res.frames) { msg.textContent = 'refused: ' + JSON.stringify(res); return; }
 
-  bonus = null; aim = null;
+  bonus = null; aim = null; pull = 0;
   anim = { frames: res.frames, i: 0 };
   await new Promise(done => {
     (function tick() {
@@ -426,7 +521,8 @@ async function play(body) {
   if (res.roqueted >= 0) bits.push('roquet on ' + NAMES[res.roqueted]);
   else if (res.touched >= 0) bits.push('hit ' + NAMES[res.touched] + ' — no shots');
   res.othersScored.forEach(o => bits.push(NAMES[o.ball] + ' scored ' + o.label));
-  res.broughtIn.forEach(b => bits.push(NAMES[b] + ' brought back in'));
+  res.broughtIn.forEach(b => bits.push(NAMES[b] + ' off the lawn — brought back in'));
+  if (res.endedByOutOfBounds) bits.push('turn forfeited');
   if (res.peggedOut) bits.push('staked out');
   bits.push(res.turnEnded ? 'turn over' : res.shotsLeft + ' shot' + (res.shotsLeft === 1 ? '' : 's') + ' left');
   msg.textContent = bits.join(' · ');
@@ -459,7 +555,7 @@ function render() {
     </tr>`).join('');
 
   draw();
-  updateShoot();
+  updateShot();
 }
 
 document.querySelectorAll('.ways button').forEach(btn => {
@@ -467,7 +563,7 @@ document.querySelectorAll('.ways button').forEach(btn => {
     const way = btn.dataset.way;
     bonus = { way, place: null, placing: way !== 'whereItLies' };
     if (way === 'whereItLies') bonus.place = { x: -1, y: 0 };
-    aim = null;
+    aim = null; pull = 0;
     document.getElementById('placeHint').textContent =
       'Drag around ' + NAMES[STATE.roquetedBall] + ' to choose where your ball sits.';
     render();
@@ -511,7 +607,7 @@ document.getElementById('zout').addEventListener('click', () => setZoom(zoom - 0
 
 async function newGame(n) {
   if (anim) return;
-  bonus = null; aim = null;
+  bonus = null; aim = null; pull = 0;
   await j('/api/new', { balls: n });
   await pushFeel();
   STATE = await j('/api/state');

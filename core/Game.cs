@@ -89,6 +89,9 @@ namespace Croquet.Core
         public bool PeggedOut;
         public bool TurnEnded;
 
+        /// <summary>The turn ended because a ball left the lawn (Option 2A).</summary>
+        public bool EndedByOutOfBounds;
+
         /// <summary>Strokes the striker still has after this one.</summary>
         public int ShotsLeft;
 
@@ -135,8 +138,12 @@ namespace Croquet.Core
         /// <summary>Ball index -> side. Null means every ball for itself.</summary>
         public readonly int[] Side;
 
-        public Game(World world, int[] side = null)
+        /// <summary>Which Challenging Options are in force.</summary>
+        public readonly RuleOptions Options;
+
+        public Game(World world, int[] side = null, RuleOptions options = null)
         {
+            Options = options ?? new RuleOptions();
             World = world;
             States = new BallState[world.Balls.Length];
             for (int i = 0; i < States.Length; i++)
@@ -350,6 +357,19 @@ namespace Croquet.Core
             // Bonuses do not accumulate: earning any forfeits what was owed.
             ShotsLeft = earned > 0 ? earned : ShotsLeft - 1;
 
+            // Option 2A: sending anything off the lawn ends the turn, however
+            // well the rest of the stroke went. Applied after the bonus maths
+            // so it overrides shots that were genuinely earned.
+            if (Options.OutOfBoundsEndsTurn && r.BroughtIn.Count > 0)
+            {
+                ShotsLeft = 0;
+                r.EndedByOutOfBounds = true;
+            }
+
+            // Read before the turn can pass: NextTurn resets ShotsLeft for
+            // whoever is next, and this report is about the stroke just played.
+            r.ShotsLeft = Math.Max(0, ShotsLeft);
+
             if (r.PeggedOut || ShotsLeft <= 0)
             {
                 Stroke = StrokeKind.Ordinary;
@@ -364,7 +384,6 @@ namespace Croquet.Core
                 if (!roquet) RoquetedBall = -1;
             }
 
-            r.ShotsLeft = ShotsLeft;
             r.Next = Stroke;
             r.NextStriker = Striker;
             return r;
@@ -400,7 +419,11 @@ namespace Croquet.Core
                 Striker = j;
                 ShotsLeft = 1;
                 Stroke = StrokeKind.Ordinary;
-                States[j].Dead.Clear();     // deadness lapses at the start of a turn
+
+                // The basic rule lets deadness lapse here. Under Option 1 it
+                // does not: it lifts only when the ball clears its next wicket.
+                if (!Options.CarryOverDeadness) States[j].Dead.Clear();
+
                 EnterLawn(j);
                 return;
             }
