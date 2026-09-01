@@ -137,12 +137,12 @@ namespace Croquet.Core
             IsPeg(point) ? PegFor(point) : Hoops[HoopOfPoint[point]].Center;
 
         /// <summary>
-        /// Where every ball plays its first stroke from: a mallet's length in
-        /// front of wicket 1, on the centre line. All of them start from the
-        /// same spot, one at a time as their turn first comes round -- they do
-        /// not sit on the lawn in a row waiting.
+        /// Where every ball plays its first stroke from: halfway between the
+        /// finishing stake and wicket 1. All of them start from the same spot,
+        /// one at a time as their turn first comes round -- they do not sit on
+        /// the lawn in a row waiting.
         /// </summary>
-        public Vec2 StartSpot(CourtSpec spec) =>
-            new Vec2(Hoops[0].Center.X - spec.MalletLength, Hoops[0].Center.Y);
+        public Vec2 StartSpot =>
+            new Vec2((HomePeg.X + Hoops[0].Center.X) / 2, HomePeg.Y);
     }
 }

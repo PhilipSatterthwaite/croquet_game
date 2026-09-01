@@ -4,60 +4,60 @@ using System.Linq;
 
 namespace Croquet.Core
 {
-    /// <summary>What the striker is allowed to do with the stroke in hand.</summary>
+    /// <summary>Whether the stroke in hand is an ordinary one or the first bonus after a roquet.</summary>
     public enum StrokeKind
     {
-        /// <summary>An ordinary stroke: strike your own ball and see what happens.</summary>
         Ordinary,
 
         /// <summary>
-        /// The stroke owed after a roquet. The striker's ball is picked up and
-        /// placed touching the roqueted ball, and both are sent on together.
+        /// The first of the two shots a roquet earns. It may be taken in any of
+        /// four ways — see <see cref="BonusWay"/>. The second is always an
+        /// ordinary continuation from wherever the striker comes to rest.
         /// </summary>
-        Croquet
+        Bonus
     }
 
     /// <summary>
-    /// What the striker does with the stroke it owes after a roquet. All three
-    /// place the striker against (or a mallet head from) the ball it hit; they
-    /// differ in what moves afterwards.
+    /// The four ways the first bonus shot after a roquet may be taken, from the
+    /// Bonus Shots section of the USCA nine-wicket rules.
     /// </summary>
-    public enum CroquetStyle
+    public enum BonusWay
     {
-        /// <summary>
-        /// Placed a mallet head clear of the roqueted ball, then struck. Only
-        /// the striker travels — nothing is sent.
-        /// </summary>
-        Continue,
+        /// <summary>A mallet-head distance or less from the roqueted ball.</summary>
+        MalletHead,
 
         /// <summary>
-        /// Placed touching, at whatever angle the striker chooses, and struck.
-        /// Both balls travel, and the angle between them is the choice.
+        /// In contact, with the striker's ball held steady under a foot or hand.
+        /// Everything goes into the other ball; the striker stays put.
         /// </summary>
-        Split,
+        FootShot,
 
-        /// <summary>
-        /// Placed touching as for a split, but the striker stays put and all of
-        /// it goes into the other ball. The way to put a ball somewhere without
-        /// giving up your own position.
-        /// </summary>
-        Send
+        /// <summary>In contact, both balls sent on together.</summary>
+        CroquetShot,
+
+        /// <summary>Left where it came to rest after the roquet, and simply played.</summary>
+        WhereItLies
     }
 
     /// <summary>The rules-side state of one ball. Physics lives in Ball.</summary>
     public sealed class BallState
     {
-        /// <summary>How far round the course: 0 is for wicket 1, 16 is pegged out.</summary>
+        /// <summary>How far round the course: 0 is for wicket 1, 16 is staked out.</summary>
         public int Point;
 
         /// <summary>
         /// False until this ball's first turn comes round. Balls are not laid
-        /// out on the lawn at the start; each one enters from the starting spot
+        /// out on the lawn at the start; each enters from the starting spot
         /// when it is first played.
         /// </summary>
         public bool Started;
 
-        /// <summary>Balls this one has roqueted since it last ran a wicket.</summary>
+        /// <summary>
+        /// Balls already roqueted this turn. Bonus shots are not earned for
+        /// hitting them again until the striker clears its next wicket -- and
+        /// the whole set is forgotten at the start of the next turn, which is
+        /// the basic rule. Carry-over deadness is Challenging Option 1.
+        /// </summary>
         public readonly HashSet<int> Dead = new HashSet<int>();
 
         public bool Finished => Course.IsFinished(Point);
@@ -67,53 +67,69 @@ namespace Croquet.Core
     public sealed class StrokeResult
     {
         public int Striker;
-        public readonly List<int> PointsScored = new List<int>();
-        public int Roqueted = -1;
-        public bool WentOut;
-        public bool PeggedOut;
 
-        /// <summary>The croqueted ball was sent off the lawn — a fault.</summary>
-        public bool Faulted;
+        /// <summary>Points the striker scored, in course order.</summary>
+        public readonly List<int> PointsScored = new List<int>();
+
+        /// <summary>Points other balls were driven through, as (ball, point).</summary>
+        public readonly List<(int Ball, int Point)> OthersScored = new List<(int, int)>();
+
+        /// <summary>The ball roqueted, or -1. Only the first ball struck can be one.</summary>
+        public int Roqueted = -1;
+
+        /// <summary>
+        /// A ball was touched but earned nothing -- either the striker was
+        /// already dead on it, or a wicket in the same stroke came first.
+        /// </summary>
+        public int TouchedButNoRoquet = -1;
+
+        /// <summary>Balls that left the lawn and were brought back in.</summary>
+        public readonly List<int> BroughtIn = new List<int>();
+
+        public bool PeggedOut;
         public bool TurnEnded;
+
+        /// <summary>Strokes the striker still has after this one.</summary>
+        public int ShotsLeft;
+
         public StrokeKind Next;
         public int NextStriker;
     }
 
     /// <summary>
-    /// Nine-wicket croquet's turn structure.
+    /// Nine-wicket croquet, to the USCA basic rules.
     ///
-    /// A turn is one stroke plus whatever that stroke earns:
+    /// A turn is one stroke plus the bonus shots it earns:
     ///
-    ///   * run your wicket           -> one continuation stroke, and your
-    ///                                  deadness is wiped
-    ///   * hit the turning peg       -> one continuation stroke
-    ///   * roquet a ball you are
-    ///     alive on                  -> a croquet stroke, then a continuation
-    ///                                  stroke, and you are now dead on it
+    ///   * a wicket, or the turning stake  -> one bonus shot
+    ///   * a roquet                        -> two bonus shots
     ///
-    /// Earn nothing and the turn passes. That is the whole engine, and it is
-    /// deliberately separate from the physics: it consumes the ordered events
-    /// of a shot and never looks at a velocity.
+    /// Two is the ceiling; there is never a third. And bonuses do not
+    /// accumulate: earning any forfeits whatever was owed before, so a bonus
+    /// shot that scores a wicket leaves ONE shot, not two.
     ///
-    /// Order matters, which is why events carry a step. Running your wicket
-    /// clears deadness, so hitting a ball you were dead on is a live roquet if
-    /// the wicket came first in the same stroke, and nothing at all if it did
-    /// not.
+    /// Order within a stroke decides everything, which is why events carry a
+    /// step. Wicket first, then a ball: the wicket counts and the contact is
+    /// ignored. Ball first, then a wicket: two shots for the roquet and the
+    /// wicket does not count at all.
+    ///
+    /// The rules layer never looks at a velocity; it reads the ordered events
+    /// the simulation recorded and applies the rules to them.
     /// </summary>
     public sealed class Game
     {
         public readonly World World;
         public readonly BallState[] States;
 
-        /// <summary>Index into World.Balls of whoever is on strike.</summary>
         public int Striker { get; private set; }
-
         public StrokeKind Stroke { get; private set; } = StrokeKind.Ordinary;
 
-        /// <summary>The ball a pending croquet stroke must be taken from, or -1.</summary>
-        public int CroquetFrom { get; private set; } = -1;
+        /// <summary>The ball a pending bonus stroke is taken against, or -1.</summary>
+        public int RoquetedBall { get; private set; } = -1;
 
-        /// <summary>Set once a side has taken every one of its balls round.</summary>
+        /// <summary>Strokes the striker may still play, including the one in hand.</summary>
+        public int ShotsLeft { get; private set; } = 1;
+
         public int[] Winner { get; private set; }
 
         /// <summary>Ball index -> side. Null means every ball for itself.</summary>
@@ -133,15 +149,17 @@ namespace Croquet.Core
             EnterLawn(Striker);
         }
 
-        /// <summary>
-        /// Brings a ball onto the lawn for its first stroke. Every ball starts
-        /// from the same spot, so if the last one to start has not moved off it
-        /// yet the newcomer is nudged clear rather than placed on top of it.
-        /// </summary>
+        public BallState Current => States[Striker];
+        public int Target => Current.Point;
+
+        /// <summary>Would hitting this ball earn bonus shots?</summary>
+        public bool IsAlive(int on) => !Current.Dead.Contains(on);
+
+        // ---- coming onto the lawn -----------------------------------------
+
         void EnterLawn(int i)
         {
             if (States[i].Started || States[i].Finished) return;
-
             States[i].Started = true;
             World.Balls[i].InPlay = true;
             World.Balls[i].Pos = FreeStartSpot(i);
@@ -149,12 +167,11 @@ namespace Croquet.Core
 
         Vec2 FreeStartSpot(int forBall)
         {
-            var spot = World.Field.StartSpot(World.Spec);
+            var spot = World.Field.StartSpot;
             double step = World.Spec.BallRadius * 2.2;
 
             for (int k = 0; k < 40; k++)
             {
-                // The spot itself first, then alternating either side of it.
                 int rank = (k + 1) / 2;
                 double dy = (k % 2 == 0 ? 1 : -1) * rank * step;
                 var p = new Vec2(spot.X, spot.Y + dy);
@@ -163,74 +180,51 @@ namespace Croquet.Core
                 for (int j = 0; j < World.Balls.Length && clear; j++)
                 {
                     if (j == forBall || !World.Balls[j].InPlay) continue;
-                    if ((World.Balls[j].Pos - p).LengthSq < (step * step)) clear = false;
+                    if ((World.Balls[j].Pos - p).LengthSq < step * step) clear = false;
                 }
                 if (clear) return p;
             }
             return spot;
         }
 
-        public BallState Current => States[Striker];
+        // ---- playing ------------------------------------------------------
 
-        /// <summary>The course point the striker is playing for.</summary>
-        public int Target => Current.Point;
-
-        /// <summary>
-        /// Is the striker allowed to take a roquet off this ball? False once it
-        /// has been roqueted, until the striker runs its next wicket.
-        /// </summary>
-        public bool IsAlive(int on) => !Current.Dead.Contains(on);
-
-        // ------------------------------------------------------------------
-
-        /// <summary>
-        /// Plays the stroke in hand: sets the striker rolling and resolves what
-        /// the shot earned. The caller has already positioned the balls for a
-        /// croquet stroke, if that is what this is.
-        /// </summary>
+        /// <summary>An ordinary stroke: the striker is struck from where it lies.</summary>
         public StrokeResult Play(Vec2 direction, double power)
         {
             if (Winner != null) throw new InvalidOperationException("the game is over");
-            if (Stroke == StrokeKind.Croquet)
-                throw new InvalidOperationException("a croquet stroke is owed; use PlayCroquet");
+            if (Stroke == StrokeKind.Bonus)
+                throw new InvalidOperationException("a bonus stroke is owed; use PlayBonus");
 
             World.ClearShot();
             World.Balls[Striker].Vel = direction.Normalized * power;
             Sim.Settle(World);
-
             return Resolve();
         }
 
         /// <summary>
-        /// Takes the croquet stroke owed by a roquet.
-        ///
+        /// The first bonus shot after a roquet, taken one of four ways.
         /// <paramref name="placement"/> is the direction from the roqueted ball
-        /// to where the striker is set down — that angle, against the aim, is
-        /// what decides where the two balls part company on a split.
+        /// to where the striker is set down, and is ignored for
+        /// <see cref="BonusWay.WhereItLies"/>.
         /// </summary>
-        public StrokeResult PlayCroquet(CroquetStyle style, Vec2 placement,
-                                        Vec2 aim, double power)
+        public StrokeResult PlayBonus(BonusWay way, Vec2 placement, Vec2 aim, double power)
         {
             if (Winner != null) throw new InvalidOperationException("the game is over");
-            if (Stroke != StrokeKind.Croquet)
-                throw new InvalidOperationException("no croquet stroke is owed");
+            if (Stroke != StrokeKind.Bonus)
+                throw new InvalidOperationException("no bonus stroke is owed");
 
-            int other = CroquetFrom;
-
-            Vec2 n = placement.Normalized;
-            if (n.LengthSq == 0) n = new Vec2(-1, 0);
-
-            double gap = World.Spec.BallRadius * 2
-                       + (style == CroquetStyle.Continue ? World.Spec.MalletHead : 0);
-            World.Balls[Striker].Pos = World.Balls[other].Pos + n * gap;
+            int other = RoquetedBall;
+            if (way != BonusWay.WhereItLies)
+                World.Balls[Striker].Pos = BonusPlacement(way, placement);
 
             World.ClearShot();
 
-            // A send puts everything into the other ball and leaves the striker
-            // standing. Modelling it as "strike the other ball" rather than as
-            // a very heavy follow-through keeps the striker exactly where it
-            // was put, which is the whole point of the stroke.
-            if (style == CroquetStyle.Send)
+            // A foot shot pins the striker under a foot, so all of it goes into
+            // the other ball. Driving that ball directly, rather than modelling
+            // a very heavy follow-through, is what leaves the striker exactly
+            // where it was set down.
+            if (way == BonusWay.FootShot)
                 World.Balls[other].Vel = aim.Normalized * power;
             else
                 World.Balls[Striker].Vel = aim.Normalized * power;
@@ -239,133 +233,174 @@ namespace Croquet.Core
             return Resolve();
         }
 
+        /// <summary>Where the striker would be set down, for previewing the choice.</summary>
+        public Vec2 BonusPlacement(BonusWay way, Vec2 placement)
+        {
+            if (Stroke != StrokeKind.Bonus)
+                throw new InvalidOperationException("no bonus stroke is owed");
+            if (way == BonusWay.WhereItLies) return World.Balls[Striker].Pos;
+
+            Vec2 n = placement.Normalized;
+            if (n.LengthSq == 0) n = new Vec2(-1, 0);
+
+            double gap = World.Spec.BallRadius * 2
+                       + (way == BonusWay.MalletHead ? World.Spec.MalletHead : 0);
+            return World.Balls[RoquetedBall].Pos + n * gap;
+        }
+
+        // ---- resolving ----------------------------------------------------
+
         StrokeResult Resolve()
         {
             var r = new StrokeResult { Striker = Striker };
             var me = Current;
-
-            bool wasCroquet = Stroke == StrokeKind.Croquet;
-            int croquetedBall = CroquetFrom;
-
-            // Deadness as it stood when the ball was struck. The scoring loop
-            // below wipes it, so a snapshot is the only way to ask "was the
-            // striker alive on that ball at the moment it hit it".
             var deadAtStart = new HashSet<int>(me.Dead);
 
-            // 1. Points, in course order. One stroke can run more than one --
-            //    through your wicket and on through the next is rare but legal.
-            int clearedAtStep = -1;      // the substep a wicket wiped deadness
-            while (!me.Finished)
+            // The first ball the striker touched. Only the first can be a
+            // roquet: anything hit after it is ignored, with no penalty.
+            int firstBall = -1, contactStep = int.MaxValue;
+            foreach (var e in World.Events)
             {
-                int point = me.Point;
-                int at = World.Field.IsPeg(point)
-                       ? World.StepHitPeg(Striker, point)
-                       : World.StepRanPoint(Striker, point);
+                if (e.Kind != EventKind.BallContact) continue;
+                if (e.Ball != Striker && e.Other != Striker) continue;
+                firstBall = e.Ball == Striker ? e.Other : e.Ball;
+                contactStep = e.Step;
+                break;
+            }
+
+            // Points the striker could claim, and when the first of them landed.
+            var claimable = new List<(int Point, int Step)>();
+            int probe = me.Point;
+            while (!Course.IsFinished(probe))
+            {
+                int at = World.Field.IsPeg(probe)
+                       ? World.StepHitPeg(Striker, probe)
+                       : World.StepRanPoint(Striker, probe);
                 if (at < 0) break;
-
-                me.Point++;
-                r.PointsScored.Add(point);
-
-                // Running a wicket brings you alive on everything again. The
-                // pegs do not: they are struck, not run.
-                if (!World.Field.IsPeg(point)) { me.Dead.Clear(); clearedAtStep = at; }
-
-                if (me.Finished)
-                {
-                    World.Balls[Striker].InPlay = false;
-                    r.PeggedOut = true;
-                    break;
-                }
+                claimable.Add((probe, at));
+                probe++;
             }
+            int firstPointStep = claimable.Count > 0 ? claimable[0].Step : int.MaxValue;
 
-            // 2. The roquet: the first ball the striker touched that it was
-            //    alive on AT THE MOMENT OF CONTACT. Dead at the start of the
-            //    stroke still counts if a wicket was run before the contact --
-            //    which is the whole reason events carry a step.
-            if (!r.PeggedOut)
+            // Whichever came first wins outright. A wicket then a ball: the
+            // wicket counts, the contact is nothing. A ball then a wicket: two
+            // shots for the roquet and the wicket does not count.
+            bool roquet = firstBall >= 0
+                       && !deadAtStart.Contains(firstBall)
+                       && contactStep < firstPointStep;
+
+            int earned;
+            if (roquet)
             {
-                foreach (var e in World.Events)
-                {
-                    if (e.Kind != EventKind.BallContact) continue;
-                    if (e.Ball != Striker && e.Other != Striker) continue;
-
-                    int other = e.Ball == Striker ? e.Other : e.Ball;
-                    bool alive = !deadAtStart.Contains(other)
-                              || (clearedAtStep >= 0 && e.Step > clearedAtStep);
-                    if (!alive) continue;
-
-                    r.Roqueted = other;
-                    me.Dead.Add(other);
-                    break;
-                }
-            }
-
-            r.WentOut = World.Balls[Striker].WentOut;
-
-            // Sending the ball you took croquet from off the lawn is a fault,
-            // and a fault ends the turn however well the rest of it went.
-            bool faulted = wasCroquet && croquetedBall >= 0
-                        && World.Balls[croquetedBall].WentOut;
-            r.Faulted = faulted;
-
-            // 3. What the striker has left.
-            //    A roquet owes a croquet stroke. A point owes a continuation.
-            //    And a croquet stroke ALWAYS owes the continuation that came
-            //    with the roquet, even if the croquet stroke itself did
-            //    nothing -- that is the pair of strokes a roquet buys.
-            bool carryOn;
-            StrokeKind next = StrokeKind.Ordinary;
-
-            if (r.PeggedOut || r.WentOut || faulted) carryOn = false;
-            else if (r.Roqueted >= 0) { carryOn = true; next = StrokeKind.Croquet; }
-            else if (r.PointsScored.Count > 0) carryOn = true;
-            else carryOn = wasCroquet;
-
-            if (!carryOn)
-            {
-                CroquetFrom = -1;
-                Stroke = StrokeKind.Ordinary;
-                r.TurnEnded = true;
-                CheckWinner();
-                if (Winner == null) NextStriker();
+                r.Roqueted = firstBall;
+                me.Dead.Add(firstBall);
+                RoquetedBall = firstBall;
+                earned = 2;
             }
             else
             {
-                Stroke = next;
-                CroquetFrom = next == StrokeKind.Croquet ? r.Roqueted : -1;
+                if (firstBall >= 0) r.TouchedButNoRoquet = firstBall;
+
+                foreach (var (point, at) in claimable)
+                {
+                    me.Point++;
+                    r.PointsScored.Add(point);
+                    if (!World.Field.IsPeg(point)) me.Dead.Clear();   // a wicket revives you
+                    if (me.Finished)
+                    {
+                        World.Balls[Striker].InPlay = false;
+                        r.PeggedOut = true;
+                        break;
+                    }
+                }
+                // Never three. Two wickets in a stroke earn two, and so does a
+                // wicket plus the turning stake.
+                earned = Math.Min(2, r.PointsScored.Count);
             }
 
+            // A ball driven through its own wicket by someone else scores the
+            // point for its side -- but earns nobody a bonus shot.
+            for (int i = 0; i < World.Balls.Length; i++)
+            {
+                if (i == Striker || States[i].Finished) continue;
+                while (!States[i].Finished)
+                {
+                    int p = States[i].Point;
+                    bool got = World.Field.IsPeg(p)
+                             ? World.StepHitPeg(i, p) >= 0
+                             : World.RanPoint(i, p);
+                    if (!got) break;
+
+                    States[i].Point++;
+                    r.OthersScored.Add((i, p));
+                    if (States[i].Finished) World.Balls[i].InPlay = false;
+                }
+            }
+
+            // Out of bounds carries no penalty in the basic rules: the ball is
+            // brought back in a mallet's length, square to the line it crossed,
+            // and play carries on.
+            for (int i = 0; i < World.Balls.Length; i++)
+            {
+                if (!World.Balls[i].InPlay || !World.Balls[i].WentOut) continue;
+                BringInbounds(i);
+                r.BroughtIn.Add(i);
+            }
+
+            // Bonuses do not accumulate: earning any forfeits what was owed.
+            ShotsLeft = earned > 0 ? earned : ShotsLeft - 1;
+
+            if (r.PeggedOut || ShotsLeft <= 0)
+            {
+                Stroke = StrokeKind.Ordinary;
+                RoquetedBall = -1;
+                r.TurnEnded = true;
+                CheckWinner();
+                if (Winner == null) NextTurn();
+            }
+            else
+            {
+                Stroke = roquet ? StrokeKind.Bonus : StrokeKind.Ordinary;
+                if (!roquet) RoquetedBall = -1;
+            }
+
+            r.ShotsLeft = ShotsLeft;
             r.Next = Stroke;
             r.NextStriker = Striker;
             return r;
         }
 
         /// <summary>
-        /// Where the striker would be set down for this croquet stroke, without
-        /// committing to it. For drawing the preview while the player chooses.
+        /// Square to the line it crossed, a mallet's length in. Perpendicular,
+        /// not diagonal -- that is explicit in the rules.
         /// </summary>
-        public Vec2 CroquetPlacement(CroquetStyle style, Vec2 placement)
+        void BringInbounds(int i)
         {
-            if (Stroke != StrokeKind.Croquet)
-                throw new InvalidOperationException("no croquet stroke is owed");
+            var c = World.Spec;
+            double d = c.BoundaryReturn;
+            var p = World.Balls[i].Pos;
+            double x = p.X, y = p.Y;
 
-            Vec2 n = placement.Normalized;
-            if (n.LengthSq == 0) n = new Vec2(-1, 0);
-            double gap = World.Spec.BallRadius * 2
-                       + (style == CroquetStyle.Continue ? World.Spec.MalletHead : 0);
-            return World.Balls[CroquetFrom].Pos + n * gap;
+            if (x <= 0) x = d;
+            else if (x >= c.Width) x = c.Width - d;
+
+            if (y <= 0) y = d;
+            else if (y >= c.Height) y = c.Height - d;
+
+            World.Balls[i].Pos = new Vec2(x, y);
+            World.Balls[i].Vel = Vec2.Zero;
         }
 
-        void NextStriker()
+        void NextTurn()
         {
-            // Skips balls that are ROUND, not balls that are off the lawn --
-            // a ball that has not started yet is still due its turn, and gets
-            // brought on when that turn arrives.
             for (int k = 1; k <= States.Length; k++)
             {
                 int j = (Striker + k) % States.Length;
                 if (States[j].Finished) continue;
                 Striker = j;
+                ShotsLeft = 1;
+                Stroke = StrokeKind.Ordinary;
+                States[j].Dead.Clear();     // deadness lapses at the start of a turn
                 EnterLawn(j);
                 return;
             }

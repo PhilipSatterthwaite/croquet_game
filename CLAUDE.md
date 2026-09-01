@@ -80,6 +80,33 @@ the suite red. Assert things that hold for any feel — energy leaves the system
 balls never overlap, a shot replays identically — not "the ball stops at 12.4
 metres".
 
+## The rules
+
+`2020_Complete__9_Wicket__Rules.pdf` in the repo root is the USCA official
+rules and is the authority. Basic rules only — none of the Challenging Options
+are in force. When a rule question comes up, read the PDF rather than
+reasoning from what croquet "should" do; several of these are counter-intuitive
+and the first implementation got four of them wrong.
+
+The ones that bite:
+
+- **Bonus shots**: one for a wicket or the turning stake, two for a roquet.
+  **Never three**, and they **do not accumulate** — earning any forfeits what
+  was owed, so a bonus shot that scores a wicket leaves *one* shot, not two.
+- **Order inside a stroke decides everything.** Wicket then a ball: the wicket
+  counts and the contact is ignored. Ball then a wicket: two shots for the
+  roquet and *the wicket does not count at all*.
+- **Deadness lapses at the start of your next turn**, or when you clear your
+  next wicket, whichever comes first. Carry-over deadness is Option 1 and is
+  not in force. Hitting a dead ball costs nothing; it just earns nothing.
+- **Out of bounds carries no penalty.** The ball is replaced one mallet length
+  (36 in) in, *perpendicular* to the line it crossed, and play continues.
+- **A ball driven through its own wicket by someone else scores the point** for
+  its side — but earns nobody a bonus shot.
+- The first bonus shot after a roquet may be taken **four** ways: mallet head,
+  foot shot, croquet shot, or from where it lies. The second is always an
+  ordinary continuation.
+
 ## How a shot resolves
 
 Worth reading once, because the layering is the whole design.
@@ -100,20 +127,16 @@ ball can pass through and roll back out, or arrive on the far side round the
 outside. So crossings are counted signed, only when they pass between the
 uprights, and the net is read at the end of the shot.
 
-The turn: a roquet owes a croquet stroke **and** a continuation; a point owes a
-continuation; earn nothing and the turn passes. Going out, pegging out, or
-sending the croqueted ball off the lawn ends it regardless.
-
 ## Current state
 
-Done and tested: rolling, contact, hoops and pegs as obstacles, the
-nine-wicket layout, running hoops in the right direction, the full turn state
-machine, deadness, pegging out, sides and winning.
+Done and tested: rolling, contact, hoops and pegs as obstacles, the nine-wicket
+layout, running hoops in the right direction, the turn and bonus-shot machinery
+above, all four bonus ways, deadness, out-of-bounds replacement, points scored
+for balls driven by others, staking out, sides and winning.
 
-Not built yet: the Unity project, AI, shot preview, out-of-bounds replacement
-(a ball currently stops on the line rather than coming back in a foot), and
-the finer croquet-stroke placements — the lab always places the striker on the
-side it approached from.
+Not built yet: the Unity project, AI, shot preview, rovers and poison,
+"wicketed" balls, and the rule that a ball resting within a mallet length of
+the boundary is brought in.
 
-The scorekeeper app at `../Croquet Score App/index.html` was the spec for the
-course and deadness; `Course.Labels` here mirrors its `COURSE`.
+The scorekeeper app at `../Croquet Score App/index.html` was the original spec
+for the course; `Course.Labels` here mirrors its `COURSE`.

@@ -40,7 +40,7 @@ app.MapGet("/api/field", () =>
         ballRadius = spec.BallRadius,
         pegRadius = f.PegRadius,
         malletHead = spec.MalletHead,
-        startSpot = new[] { f.StartSpot(spec).X, f.StartSpot(spec).Y },
+        startSpot = new[] { f.StartSpot.X, f.StartSpot.Y },
         homePeg = new[] { f.HomePeg.X, f.HomePeg.Y },
         turningPeg = new[] { f.TurningPeg.X, f.TurningPeg.Y },
         hoops = f.Hoops.Select(h => new
@@ -89,23 +89,24 @@ app.MapPost("/api/play", (PlayRequest r) =>
     StrokeKind was = game.Stroke;
 
     // Where every ball stands as the stroke begins, and which one is about to
-    // be set moving. A croquet stroke moves the striker to its placement first,
-    // and a send drives the OTHER ball while the striker stands still.
+    // be set moving. A bonus stroke moves the striker to its placement first,
+    // and a foot shot drives the OTHER ball while the striker is held.
     var before = game.World.Balls.Select(b => b.Pos).ToArray();
     var wasInPlay = game.World.Balls.Select(b => b.InPlay).ToArray();
     int moved = striker;
 
     StrokeResult result;
-    if (was == StrokeKind.Croquet)
+    if (was == StrokeKind.Bonus)
     {
-        if (!Enum.TryParse<CroquetStyle>(r.Style, true, out var style))
-            return Results.BadRequest("a croquet stroke needs a style: continue, split or send");
+        if (!Enum.TryParse<BonusWay>(r.Way, true, out var way))
+            return Results.BadRequest(
+                "a bonus stroke needs a way: malletHead, footShot, croquetShot or whereItLies");
 
         var place = new Vec2(r.PlaceX, r.PlaceY);
-        before[striker] = game.CroquetPlacement(style, place);
-        if (style == CroquetStyle.Send) moved = game.CroquetFrom;
+        before[striker] = game.BonusPlacement(way, place);
+        if (way == BonusWay.FootShot) moved = game.RoquetedBall;
 
-        result = game.PlayCroquet(style, place, new Vec2(r.Dx, r.Dy), r.Power);
+        result = game.PlayBonus(way, place, new Vec2(r.Dx, r.Dy), r.Power);
     }
     else
     {
@@ -142,10 +143,12 @@ app.MapPost("/api/play", (PlayRequest r) =>
         seconds = steps * FrameDt,
         stroke = was.ToString(),
         scored = result.PointsScored.Select(p => Course.Labels[p]),
+        othersScored = result.OthersScored.Select(o => new { ball = o.Ball, label = Course.Labels[o.Point] }),
         roqueted = result.Roqueted,
-        wentOut = result.WentOut,
+        touched = result.TouchedButNoRoquet,
+        broughtIn = result.BroughtIn,
         peggedOut = result.PeggedOut,
-        faulted = result.Faulted,
+        shotsLeft = result.ShotsLeft,
         turnEnded = result.TurnEnded,
         state = Snapshot()
     });
@@ -179,7 +182,8 @@ object Snapshot() => new
 {
     striker = game.Striker,
     stroke = game.Stroke.ToString(),
-    croquetFrom = game.CroquetFrom,
+    roquetedBall = game.RoquetedBall,
+    shotsLeft = game.ShotsLeft,
     winner = game.Winner,
     friction = spec.Friction,
     restitution = spec.Restitution,
@@ -210,10 +214,12 @@ static Game NewGame(int count, CourtSpec spec)
 record NewRequest(int Balls);
 record FeelRequest(double Friction, double Restitution, double ObstacleRestitution);
 
-/// <param name="Style">continue, split or send — only for a croquet stroke.</param>
+/// <param name="Way">
+/// malletHead, footShot, croquetShot or whereItLies — only for a bonus stroke.
+/// </param>
 /// <param name="PlaceX">
 /// Direction from the roqueted ball to where the striker is set down. The angle
-/// between this and the aim is what makes a split a split.
+/// between this and the aim is what makes a croquet shot split.
 /// </param>
 record PlayRequest(double Dx, double Dy, double Power,
-                   string Style = null, double PlaceX = -1, double PlaceY = 0);
+                   string Way = null, double PlaceX = -1, double PlaceY = 0);

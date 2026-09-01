@@ -5,7 +5,7 @@
 <title>Croquet lab</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-:root{ --g:#E7E2D7; --s:#FCFAF6; --l:#C7BFAE; --t:#201C14; --d:#6B6355; }
+:root{ --g:#E7E2D7; --s:#FCFAF6; --l:#C7BFAE; --t:#201C14; --d:#6B6355; --go:#2E7D46; }
 *{box-sizing:border-box}
 body{margin:0;background:var(--g);color:var(--t);
   font:400 15px/1.45 ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
@@ -16,19 +16,50 @@ h1{margin:0;font-size:14px;font-weight:650;letter-spacing:.22em;text-transform:u
 #turn{font-size:14px;font-weight:600}
 #msg{font-size:13px;color:var(--d)}
 
-/* canvas and the zoom column beside it */
 .stage{display:flex;gap:10px;align-items:stretch}
 #court{display:block;flex:1;min-width:0;width:100%;height:auto;border-radius:10px;
   touch-action:none;cursor:crosshair;box-shadow:0 2px 10px -4px #0005}
 .zoom{flex:none;width:46px;display:flex;flex-direction:column;align-items:center;
-  gap:6px;background:var(--s);border:1px solid var(--l);border-radius:10px;
-  padding:9px 0}
+  gap:6px;background:var(--s);border:1px solid var(--l);border-radius:10px;padding:9px 0}
 .zoom b{font-size:10px;color:var(--d);font-variant-numeric:tabular-nums}
 .zoom input[type=range]{writing-mode:vertical-lr;direction:rtl;
-  -webkit-appearance:slider-vertical;width:22px;flex:1;accent-color:#3F7A46;margin:0}
+  -webkit-appearance:slider-vertical;width:22px;flex:1;accent-color:var(--go);margin:0}
 .zoom button{width:28px;height:24px;border:1px solid var(--l);border-radius:6px;
   background:var(--g);color:var(--t);font:inherit;font-size:14px;line-height:1;
   cursor:pointer;padding:0}
+
+/* the shot bar: aim on the court, then power, then shoot */
+#shot{display:flex;align-items:center;gap:14px;margin-top:12px;background:var(--s);
+  border:1px solid var(--l);border-radius:12px;padding:12px 14px}
+#shot .lbl{font-size:10px;font-weight:650;color:var(--d);letter-spacing:.18em;
+  text-transform:uppercase;flex:none}
+#power{flex:1;min-width:120px;height:26px;accent-color:var(--go);margin:0}
+#pv{flex:none;width:78px;font-size:13px;font-weight:650;text-align:right;
+  font-variant-numeric:tabular-nums}
+#shoot{flex:none;padding:12px 26px;border:none;border-radius:10px;background:var(--go);
+  color:#fff;font:inherit;font-size:14px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;cursor:pointer}
+#shoot:disabled{background:var(--l);color:var(--s);cursor:default}
+#shoot:not(:disabled):active{transform:scale(.98)}
+
+/* bonus-shot chooser */
+#bonus{display:none;margin-top:12px;background:var(--s);border:1px solid var(--l);
+  border-radius:12px;padding:13px 15px}
+#bonus.on{display:block}
+#bonus h2{margin:0 0 4px;font-size:10px;font-weight:650;color:var(--d);
+  letter-spacing:.18em;text-transform:uppercase}
+#bonus p{margin:0 0 10px;font-size:13px;color:var(--d)}
+.ways{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.ways button{padding:11px 9px;border:1px solid var(--l);border-radius:10px;
+  background:var(--g);color:var(--t);font:inherit;cursor:pointer;text-align:left}
+.ways button b{display:block;font-size:13px;font-weight:650}
+.ways button span{display:block;font-size:11px;color:var(--d);margin-top:3px;line-height:1.35}
+.ways button[aria-pressed=true]{border-color:var(--go);box-shadow:inset 0 0 0 1px var(--go)}
+#placeRow{display:none;align-items:center;gap:12px;margin-top:11px}
+#placeRow.on{display:flex}
+#placeRow span{font-size:12px;color:var(--d);flex:1}
+#placeOk{padding:9px 18px;border:1px solid var(--go);border-radius:9px;background:var(--go);
+  color:#fff;font:inherit;font-size:13px;font-weight:650;cursor:pointer}
 
 .panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
   gap:12px;margin-top:14px}
@@ -38,7 +69,7 @@ h1{margin:0;font-size:14px;font-weight:650;letter-spacing:.22em;text-transform:u
 .row{display:flex;align-items:center;justify-content:space-between;
   font-size:12px;color:var(--d);margin-bottom:3px}
 .row b{color:var(--t);font-variant-numeric:tabular-nums;font-weight:650}
-input[type=range]{width:100%;accent-color:#3F7A46;margin:0 0 10px}
+input[type=range]{width:100%;accent-color:var(--go);margin:0 0 10px}
 
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;font-size:10px;color:var(--d);letter-spacing:.12em;
@@ -49,28 +80,9 @@ td{padding:3px 0;border-top:1px solid var(--l)}
 tr[data-striker=true] td{font-weight:700}
 tr[data-off=true] td{opacity:.45}
 .dead{font-size:10px;color:var(--d)}
-
 button.act{width:100%;padding:10px 0;margin-top:6px;border:1px solid var(--l);
   border-radius:9px;background:var(--g);color:var(--t);font:inherit;font-size:13px;
   font-weight:600;cursor:pointer}
-button.act:active{transform:scale(.98)}
-
-/* croquet chooser */
-#croquet{display:none;margin-top:12px;background:var(--s);border:1px solid var(--l);
-  border-radius:12px;padding:13px 15px}
-#croquet.on{display:block}
-#croquet h2{margin:0 0 4px;font-size:10px;font-weight:650;color:var(--d);
-  letter-spacing:.18em;text-transform:uppercase}
-#croquet p{margin:0 0 10px;font-size:13px;color:var(--d)}
-.styles{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
-.styles button{padding:11px 8px;border:1px solid var(--l);border-radius:10px;
-  background:var(--g);color:var(--t);font:inherit;cursor:pointer;text-align:left}
-.styles button b{display:block;font-size:13px;font-weight:650}
-.styles button span{display:block;font-size:11px;color:var(--d);margin-top:3px;
-  line-height:1.35}
-.styles button[aria-pressed=true]{border-color:#3F7A46;
-  box-shadow:inset 0 0 0 1px #3F7A46}
-
 .hint{font-size:12px;color:var(--d);margin:10px 2px 0;line-height:1.55}
 kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   padding:1px 5px;font:inherit;font-size:11px}
@@ -82,7 +94,7 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
 <header>
   <h1>Croquet lab</h1>
   <span id="turn"></span>
-  <span id="msg">drag to aim</span>
+  <span id="msg"></span>
 </header>
 
 <div class="stage">
@@ -95,24 +107,36 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   </div>
 </div>
 
-<div id="croquet">
-  <h2>Croquet stroke</h2>
-  <p id="croquetWho"></p>
-  <div class="styles">
-    <button data-style="continue"><b>Continue</b>
-      <span>A mallet head clear. Only you move.</span></button>
-    <button data-style="split"><b>Split</b>
-      <span>Touching, any angle. Both move.</span></button>
-    <button data-style="send"><b>Send</b>
-      <span>Touching. Only they move.</span></button>
+<div id="shot">
+  <span class="lbl">Power</span>
+  <input type="range" id="power" min="0" max="100" step="1" value="45">
+  <span id="pv">3.2 m/s</span>
+  <button id="shoot">Shoot</button>
+</div>
+
+<div id="bonus">
+  <h2>Two bonus shots — the first may be taken four ways</h2>
+  <p id="bonusWho"></p>
+  <div class="ways">
+    <button data-way="malletHead"><b>Mallet head</b>
+      <span>A mallet head clear of it.</span></button>
+    <button data-way="footShot"><b>Foot shot</b>
+      <span>Touching, your ball held. Only they move.</span></button>
+    <button data-way="croquetShot"><b>Croquet shot</b>
+      <span>Touching. Both move.</span></button>
+    <button data-way="whereItLies"><b>Where it lies</b>
+      <span>Don't move. Just play on.</span></button>
+  </div>
+  <div id="placeRow">
+    <span id="placeHint"></span>
+    <button id="placeOk">Place here</button>
   </div>
 </div>
 
 <p class="hint">
-  <kbd>drag</kbd> to aim — further is harder. The white chevron marks the
-  striker; the dashed ring marks the hoop it is playing for. After a roquet,
-  pick a stroke above, then <kbd>click</kbd> around the roqueted ball to place
-  yourself, then drag to aim.
+  <kbd>drag on the lawn</kbd> to line up the shot, set the <kbd>power</kbd>
+  bar, then <kbd>Shoot</kbd>. The white chevron marks the striker; the dashed
+  ring marks the hoop it is playing for.
 </p>
 
 <div class="panel">
@@ -129,13 +153,11 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
     <div class="row"><span>Playback</span><b id="vS">1.0×</b></div>
     <input type="range" id="rS" min="0.15" max="3" step="0.05" value="1">
   </div>
-
   <div class="card">
     <h2>Balls</h2>
     <table><thead><tr><th>Ball</th><th>Playing for</th><th>Dead on</th></tr></thead>
       <tbody id="tbl"></tbody></table>
   </div>
-
   <div class="card">
     <h2>Game</h2>
     <button class="act" id="new4">New game — 4 balls</button>
@@ -148,36 +170,36 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
 const COLOURS = ['#2B5FCE', '#D9342A', '#363D47', '#EFC01F', '#1F6633', '#DB6E0E'];
 const NAMES   = ['Blue', 'Red', 'Black', 'Yellow', 'Green', 'Orange'];
 
-let FIELD = null, STATE = null, anim = null;
-let zoom = 1;
+let FIELD = null, STATE = null, anim = null, zoom = 1;
 
-// Croquet stroke, in three phases: pick a style, click a placement angle
-// around the roqueted ball, then aim as usual.
-let croquet = null;   // {style, place:{x,y}|null}
+// The shot in hand. Aim is set by dragging on the lawn, power by the bar, and
+// nothing happens until Shoot -- so a shot can be lined up, reconsidered and
+// re-aimed without ever being played by accident.
+let aim = null;                 // {x,y} unit vector
+let bonus = null;               // {way, place:{x,y}|null, placing:bool}
 
 const cv = document.getElementById('court');
 const ctx = cv.getContext('2d');
 const msg = document.getElementById('msg');
 const turnEl = document.getElementById('turn');
+const shootBtn = document.getElementById('shoot');
 
 const j = (url, body) => fetch(url, body ? {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(body)
 } : undefined).then(r => r.json());
 
+const norm = v => { const L = Math.hypot(v.x, v.y) || 1; return { x: v.x / L, y: v.y / L }; };
+
 // --- camera ---------------------------------------------------------------
-// At zoom 1 the whole court fits. Above that the view follows the striker,
-// clamped so it never runs past the boundary.
 const clamp = (v, lo, hi) => hi < lo ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v));
 let scale = 1, viewX = 0, viewY = 0;
 
 function camera() {
   const vw = FIELD.width / zoom, vh = FIELD.height / zoom;
-  const on = STATE && STATE.balls[STATE.striker];
-  const cx = on && on.inPlay ? on.x : FIELD.width / 2;
-  const cy = on && on.inPlay ? on.y : FIELD.height / 2;
-  viewX = clamp(cx - vw / 2, 0, FIELD.width - vw);
-  viewY = clamp(cy - vh / 2, 0, FIELD.height - vh);
+  const on = strikerPoint();
+  viewX = clamp((on ? on.x : FIELD.width / 2) - vw / 2, 0, FIELD.width - vw);
+  viewY = clamp((on ? on.y : FIELD.height / 2) - vh / 2, 0, FIELD.height - vh);
   scale = cv.clientWidth / vw;
 }
 const px = (x, y) => [(x - viewX) * scale, (y - viewY) * scale];
@@ -186,27 +208,41 @@ function toM(sx, sy) {
   return [(sx - r.left) / scale + viewX, (sy - r.top) / scale + viewY];
 }
 
+// Where the striker will actually be struck from: its resting place, or the
+// bonus placement once one has been chosen.
+function strikerPoint() {
+  if (!STATE) return null;
+  const me = STATE.balls[STATE.striker];
+  if (!me.inPlay) return null;
+  if (bonus && bonus.place && bonus.way !== 'whereItLies') {
+    const other = STATE.balls[STATE.roquetedBall];
+    const gap = FIELD.ballRadius * 2 + (bonus.way === 'malletHead' ? FIELD.malletHead : 0);
+    const n = norm(bonus.place);
+    return { x: other.x + n.x * gap, y: other.y + n.y * gap };
+  }
+  return { x: me.x, y: me.y };
+}
+
 function layout() {
   if (!FIELD) return;
   const cssW = cv.clientWidth;
-  const cssH = cssW * FIELD.height / FIELD.width;
   const dpr = window.devicePixelRatio || 1;
-  cv.style.height = cssH + 'px';
+  cv.style.height = (cssW * FIELD.height / FIELD.width) + 'px';
   cv.width = Math.round(cssW * dpr);
-  cv.height = Math.round(cssH * dpr);
+  cv.height = Math.round(parseFloat(cv.style.height) * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   draw();
 }
 
 // --- drawing --------------------------------------------------------------
-function draw(positions, aim) {
+function draw(positions) {
   if (!FIELD || !STATE) return;
   camera();
   const pos = positions || STATE.balls.map(b => [b.x, b.y]);
   const w = cv.clientWidth, h = parseFloat(cv.style.height);
 
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = '#D9D2C4'; ctx.fillRect(0, 0, w, h);   // outside the lawn
+  ctx.fillStyle = '#D9D2C4'; ctx.fillRect(0, 0, w, h);
 
   const [lx, ly] = px(0, 0);
   ctx.fillStyle = '#3F7A46';
@@ -215,21 +251,16 @@ function draw(positions, aim) {
   ctx.save();
   ctx.beginPath(); ctx.rect(lx, ly, FIELD.width * scale, FIELD.height * scale); ctx.clip();
   ctx.fillStyle = 'rgba(255,255,255,.045)';
-  for (let m = 0; m < FIELD.width; m += 4) {
-    const [sx] = px(m, 0);
-    ctx.fillRect(sx, ly, 2 * scale, FIELD.height * scale);
-  }
+  for (let m = 0; m < FIELD.width; m += 4) ctx.fillRect(px(m, 0)[0], ly, 2 * scale, FIELD.height * scale);
   ctx.restore();
 
   ctx.strokeStyle = '#DCE8DD'; ctx.lineWidth = 1.5;
   ctx.strokeRect(lx, ly, FIELD.width * scale, FIELD.height * scale);
 
-  // the starting spot
   const [ssx, ssy] = px(FIELD.startSpot[0], FIELD.startSpot[1]);
   ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(ssx, ssy, Math.max(3, 0.13 * scale), 0, Math.PI * 2); ctx.stroke();
 
-  // the hoop the striker is playing for
   const me = STATE.balls[STATE.striker];
   const tgt = FIELD.points[me.point];
   if (tgt) {
@@ -247,145 +278,133 @@ function draw(positions, aim) {
     ctx.strokeStyle = '#EDF3EE'; ctx.lineWidth = wire; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(cx, cy - gap); ctx.lineTo(cx, cy + gap); ctx.stroke();
     ctx.fillStyle = '#EDF3EE';
-    for (const s of [-1, 1]) {
-      ctx.beginPath(); ctx.arc(cx, cy + s * gap, wire * .9, 0, Math.PI * 2); ctx.fill();
-    }
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(cx, cy + s * gap, wire * .9, 0, Math.PI * 2); ctx.fill(); }
   }
 
   for (const peg of [FIELD.homePeg, FIELD.turningPeg]) {
     const [cx, cy] = px(peg[0], peg[1]);
     ctx.fillStyle = '#F2E4C8';
-    ctx.beginPath(); ctx.arc(cx, cy, Math.max(4, FIELD.pegRadius * scale * 2.2), 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, Math.max(4, FIELD.pegRadius * scale * 2.2), 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = '#7A5C20'; ctx.lineWidth = 1.5; ctx.stroke();
   }
 
   const r = Math.max(3, FIELD.ballRadius * scale);
 
-  // where a croquet placement would put the striker
-  if (croquet && croquet.place) {
-    const other = STATE.balls[STATE.croquetFrom];
-    const gap = FIELD.ballRadius * 2 +
-                (croquet.style === 'continue' ? FIELD.malletHead : 0);
-    const n = norm(croquet.place);
-    const [gx, gy] = px(other.x + n.x * gap, other.y + n.y * gap);
-    ctx.setLineDash([3, 3]); ctx.lineWidth = 2;
-    ctx.strokeStyle = COLOURS[STATE.striker];
-    ctx.beginPath(); ctx.arc(gx, gy, r, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  if (aim) {
-    const from = croquet && croquet.place
-      ? placedPoint() : { x: pos[STATE.striker][0], y: pos[STATE.striker][1] };
-    const [ax, ay] = px(from.x, from.y);
-    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2;
-    ctx.setLineDash([6, 5]);
-    ctx.beginPath(); ctx.moveTo(ax, ay);
-    ctx.lineTo(ax + aim.dx * scale, ay + aim.dy * scale);
-    ctx.stroke(); ctx.setLineDash([]);
-  }
-
   pos.forEach((p, i) => {
-    const b = STATE.balls[i];
-    if (!b.inPlay) return;
+    if (!STATE.balls[i].inPlay) return;
     const [x, y] = px(p[0], p[1]);
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fillStyle = COLOURS[i]; ctx.fill();
     ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.stroke();
   });
 
-  // The striker gets a chevron floating above it rather than a ring around it.
-  // A ring reads as part of the ball and makes it look bigger than it is,
-  // which matters when you are judging whether it fits through a hoop.
-  if (!positions && me.inPlay) {
-    const [x, y] = px(pos[STATE.striker][0], pos[STATE.striker][1]);
+  if (positions) return;   // mid-animation: no aiming furniture
+
+  const from = strikerPoint();
+
+  // the ghost of a bonus placement, before it is committed
+  if (from && bonus && bonus.place && bonus.way !== 'whereItLies') {
+    const [gx, gy] = px(from.x, from.y);
+    ctx.setLineDash([3, 3]); ctx.lineWidth = 2; ctx.strokeStyle = COLOURS[STATE.striker];
+    ctx.beginPath(); ctx.arc(gx, gy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // The aim line is a fixed guide, not a power gauge -- power is the bar
+  // below, so the line only ever says WHERE, never HOW HARD.
+  if (from && aim && !STATE.winner) {
+    const [ax, ay] = px(from.x, from.y);
+    const len = Math.max(40, 1.6 * scale);
+    ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.lineWidth = 2;
+    ctx.setLineDash([7, 5]);
+    ctx.beginPath(); ctx.moveTo(ax, ay);
+    ctx.lineTo(ax + aim.x * len, ay + aim.y * len);
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(ax + aim.x * len, ay + aim.y * len, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff'; ctx.fill();
+  }
+
+  if (from) {
+    const [x, y] = px(from.x, from.y);
     const top = y - r - 6, size = Math.max(5, Math.min(10, r * 0.9));
     ctx.fillStyle = '#FFFFFF';
     ctx.beginPath();
-    ctx.moveTo(x, top);
-    ctx.lineTo(x - size, top - size * 1.3);
-    ctx.lineTo(x + size, top - size * 1.3);
+    ctx.moveTo(x, top); ctx.lineTo(x - size, top - size * 1.3); ctx.lineTo(x + size, top - size * 1.3);
     ctx.closePath(); ctx.fill();
   }
 }
 
-const norm = v => {
-  const L = Math.hypot(v.x, v.y) || 1;
-  return { x: v.x / L, y: v.y / L };
-};
-function placedPoint() {
-  const other = STATE.balls[STATE.croquetFrom];
-  const gap = FIELD.ballRadius * 2 +
-              (croquet.style === 'continue' ? FIELD.malletHead : 0);
-  const n = norm(croquet.place);
-  return { x: other.x + n.x * gap, y: other.y + n.y * gap };
+// --- aiming / placing -----------------------------------------------------
+function pointAt(e) {
+  const [mx, my] = toM(e.clientX, e.clientY);
+
+  if (bonus && bonus.placing) {
+    const other = STATE.balls[STATE.roquetedBall];
+    bonus.place = { x: mx - other.x, y: my - other.y };
+    draw();
+    return;
+  }
+  const from = strikerPoint();
+  if (!from) return;
+  aim = norm({ x: mx - from.x, y: my - from.y });
+  draw();
+  updateShoot();
 }
 
-// --- input ----------------------------------------------------------------
-let drag = null;
-
+let dragging = false;
 cv.addEventListener('pointerdown', e => {
   if (anim || !STATE || STATE.winner) return;
-
-  // Croquet: first click sets the placement angle around the roqueted ball.
-  if (STATE.stroke === 'Croquet') {
-    if (!croquet) { msg.textContent = 'pick a croquet stroke first'; return; }
-    if (!croquet.place) {
-      const [mx, my] = toM(e.clientX, e.clientY);
-      const other = STATE.balls[STATE.croquetFrom];
-      croquet.place = { x: mx - other.x, y: my - other.y };
-      msg.textContent = 'now drag to aim';
-      draw();
-      return;
-    }
-  }
   cv.setPointerCapture(e.pointerId);
-  drag = true;
+  dragging = true;
+  pointAt(e);
 });
+cv.addEventListener('pointermove', e => { if (dragging) pointAt(e); });
+cv.addEventListener('pointerup', () => { dragging = false; });
 
-cv.addEventListener('pointermove', e => {
-  if (!drag) return;
-  const [mx, my] = toM(e.clientX, e.clientY);
-  const from = croquet && croquet.place ? placedPoint() : STATE.balls[STATE.striker];
-  draw(null, { dx: mx - from.x, dy: my - from.y });
-  msg.textContent = powerFor(mx - from.x, my - from.y).toFixed(2) + ' m/s';
-});
+// --- the shot bar ---------------------------------------------------------
+const powerEl = document.getElementById('power');
+const maxPowerEl = document.getElementById('rP');
+const powerMs = () => (+powerEl.value / 100) * +maxPowerEl.value;
 
-cv.addEventListener('pointerup', async e => {
-  if (!drag) return;
-  drag = null;
-  const [mx, my] = toM(e.clientX, e.clientY);
-  const from = croquet && croquet.place ? placedPoint() : STATE.balls[STATE.striker];
-  const dx = mx - from.x, dy = my - from.y;
-  if (Math.hypot(dx, dy) < 0.15) { draw(); return; }
-  await play(dx, dy, powerFor(dx, dy));
-});
+function updateShoot() {
+  const owed = STATE && STATE.stroke === 'Bonus';
+  const needsWay = owed && !bonus;
+  const needsPlace = owed && bonus && bonus.way !== 'whereItLies' && !bonus.place;
+  const ready = STATE && !STATE.winner && !anim && aim && !needsWay && !needsPlace
+                && powerMs() > 0.05;
+  shootBtn.disabled = !ready;
+  document.getElementById('pv').textContent = powerMs().toFixed(1) + ' m/s';
 
-// Full power is always the same fraction of the screen, whatever the zoom --
-// otherwise zooming in would quietly cap how hard you could hit.
-function powerFor(dx, dy) {
-  const t = Math.min(1, Math.hypot(dx, dy) / (FIELD.width / 3 / zoom));
-  return t * +document.getElementById('rP').value;
+  if (!STATE || STATE.winner) return;
+  if (needsWay) msg.textContent = 'choose how to take the first bonus shot';
+  else if (needsPlace) msg.textContent = 'click around ' + NAMES[STATE.roquetedBall] + ' to place your ball';
+  else if (!aim) msg.textContent = 'drag on the lawn to line up';
+  else if (ready) msg.textContent = 'ready — set the power and shoot';
 }
+powerEl.addEventListener('input', updateShoot);
+maxPowerEl.addEventListener('input', updateShoot);
 
-// --- playing --------------------------------------------------------------
-async function play(dx, dy, power) {
-  const body = { dx, dy, power };
-  if (STATE.stroke === 'Croquet') {
-    body.style = croquet.style;
-    body.placeX = croquet.place.x;
-    body.placeY = croquet.place.y;
+shootBtn.addEventListener('click', async () => {
+  if (shootBtn.disabled) return;
+  const body = { dx: aim.x, dy: aim.y, power: powerMs() };
+  if (STATE.stroke === 'Bonus') {
+    body.way = bonus.way;
+    const p = bonus.place || { x: -1, y: 0 };
+    body.placeX = p.x; body.placeY = p.y;
   }
-  msg.textContent = 'simulating…';
+  await play(body);
+});
 
+async function play(body) {
+  shootBtn.disabled = true;
+  msg.textContent = 'simulating…';
   let res;
   try { res = await j('/api/play', body); }
   catch { msg.textContent = 'server not reachable'; return; }
   if (!res || !res.frames) { msg.textContent = 'refused: ' + JSON.stringify(res); return; }
 
-  croquet = null;
-  const after = res.state;
+  bonus = null; aim = null;
   anim = { frames: res.frames, i: 0 };
   await new Promise(done => {
     (function tick() {
@@ -399,36 +418,37 @@ async function play(dx, dy, power) {
     })();
   });
 
-  STATE = after;
+  STATE = res.state;
   render();
 
   const bits = [];
   if (res.scored.length) bits.push('scored ' + res.scored.join(' + '));
   if (res.roqueted >= 0) bits.push('roquet on ' + NAMES[res.roqueted]);
-  if (res.faulted) bits.push('fault — croqueted ball off the lawn');
-  else if (res.wentOut) bits.push('off the lawn');
-  if (res.peggedOut) bits.push('pegged out');
-  if (res.turnEnded) bits.push('turn over');
-  msg.textContent = bits.length ? bits.join(' · ') : 'nothing doing · turn over';
+  else if (res.touched >= 0) bits.push('hit ' + NAMES[res.touched] + ' — no shots');
+  res.othersScored.forEach(o => bits.push(NAMES[o.ball] + ' scored ' + o.label));
+  res.broughtIn.forEach(b => bits.push(NAMES[b] + ' brought back in'));
+  if (res.peggedOut) bits.push('staked out');
+  bits.push(res.turnEnded ? 'turn over' : res.shotsLeft + ' shot' + (res.shotsLeft === 1 ? '' : 's') + ' left');
+  msg.textContent = bits.join(' · ');
 }
 
 // --- sidebar --------------------------------------------------------------
 function render() {
   const s = STATE;
   if (s.winner) turnEl.textContent = s.winner.map(i => NAMES[i]).join(' & ') + ' win';
-  else {
-    const me = s.balls[s.striker];
-    turnEl.textContent = NAMES[s.striker] + ' to play — for ' + me.target;
-  }
+  else turnEl.textContent = NAMES[s.striker] + ' to play — for ' +
+       s.balls[s.striker].target + ' · ' + s.shotsLeft +
+       ' shot' + (s.shotsLeft === 1 ? '' : 's');
 
-  const owed = s.stroke === 'Croquet' && !s.winner;
-  document.getElementById('croquet').classList.toggle('on', owed);
+  const owed = s.stroke === 'Bonus' && !s.winner;
+  document.getElementById('bonus').classList.toggle('on', owed);
+  document.getElementById('placeRow').classList.toggle('on',
+    owed && bonus && bonus.way !== 'whereItLies');
   if (owed) {
-    document.getElementById('croquetWho').textContent =
-      NAMES[s.striker] + ' roqueted ' + NAMES[s.croquetFrom] +
-      '. Choose a stroke, then click around ' + NAMES[s.croquetFrom] + ' to place.';
-    document.querySelectorAll('.styles button').forEach(b =>
-      b.setAttribute('aria-pressed', String(croquet && croquet.style === b.dataset.style)));
+    document.getElementById('bonusWho').textContent =
+      NAMES[s.striker] + ' roqueted ' + NAMES[s.roquetedBall] + '.';
+    document.querySelectorAll('.ways button').forEach(b =>
+      b.setAttribute('aria-pressed', String(bonus && bonus.way === b.dataset.way)));
   }
 
   document.getElementById('tbl').innerHTML = s.balls.map((b, i) => `
@@ -439,16 +459,25 @@ function render() {
     </tr>`).join('');
 
   draw();
+  updateShoot();
 }
 
-document.querySelectorAll('.styles button').forEach(btn => {
+document.querySelectorAll('.ways button').forEach(btn => {
   btn.addEventListener('click', () => {
-    croquet = { style: btn.dataset.style, place: null };
-    document.querySelectorAll('.styles button').forEach(b =>
-      b.setAttribute('aria-pressed', String(b === btn)));
-    msg.textContent = 'click around ' + NAMES[STATE.croquetFrom] + ' to place your ball';
-    draw();
+    const way = btn.dataset.way;
+    bonus = { way, place: null, placing: way !== 'whereItLies' };
+    if (way === 'whereItLies') bonus.place = { x: -1, y: 0 };
+    aim = null;
+    document.getElementById('placeHint').textContent =
+      'Drag around ' + NAMES[STATE.roquetedBall] + ' to choose where your ball sits.';
+    render();
   });
+});
+document.getElementById('placeOk').addEventListener('click', () => {
+  if (!bonus) return;
+  if (!bonus.place) bonus.place = { x: -1, y: 0 };
+  bonus.placing = false;
+  render();
 });
 
 // --- controls -------------------------------------------------------------
@@ -482,12 +511,11 @@ document.getElementById('zout').addEventListener('click', () => setZoom(zoom - 0
 
 async function newGame(n) {
   if (anim) return;
-  croquet = null;
+  bonus = null; aim = null;
   await j('/api/new', { balls: n });
   await pushFeel();
   STATE = await j('/api/state');
   render();
-  msg.textContent = 'drag to aim';
 }
 document.getElementById('new4').addEventListener('click', () => newGame(4));
 document.getElementById('new6').addEventListener('click', () => newGame(6));

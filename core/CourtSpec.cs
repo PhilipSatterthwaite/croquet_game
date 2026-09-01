@@ -48,11 +48,11 @@ namespace Croquet.Core
         public double SleepSpeed = 0.02;
 
         /// <summary>
-        /// A ball whose centre leaves the lawn is out. In nine-wicket play it
-        /// comes back a set distance in from where it crossed; the simulation
-        /// only records the crossing, and the rules layer does the placing.
+        /// How far in from the line an out-of-bounds ball is replaced: one
+        /// mallet length, which the rules put at 36 inches. The simulation only
+        /// records the crossing; the rules layer does the placing.
         /// </summary>
-        public double BoundaryReturn = 0.3048;   // one foot
+        public double BoundaryReturn = 0.9144;   // 36 inches
 
         /// <summary>Width of a mallet head. The gap left by a continue stroke.</summary>
         public double MalletHead = 0.23;
