@@ -106,8 +106,51 @@ namespace Croquet.Core
 
         // ---- choosing -----------------------------------------------------
 
+        /// <summary>
+        /// Skips the search entirely and plays an obvious stroke: aim at the
+        /// point in order, hit it hard enough to get there. Not a difficulty
+        /// level -- a diagnostic. It separates "the search picks a bad shot"
+        /// from "a chosen shot never reaches the screen", which are otherwise
+        /// indistinguishable from the outside.
+        /// </summary>
+        public bool Simple;
+
+        public static Bot Dummy() => new Bot { Simple = true };
+
+        BotMove SimpleMove(Game game)
+        {
+            var field = game.World.Field;
+            int me = game.Striker;
+            var c = game.World.Spec;
+
+            bool bonus = game.Stroke == StrokeKind.Bonus;
+            var placement = new Vec2(-1, 0);
+            var from = bonus
+                ? game.BonusPlacement(BonusWay.CroquetShot, placement)
+                : game.World.Balls[me].Pos;
+
+            int point = game.States[me].Point;
+            var to = field.IsFinished(point) ? field.Pegs[0] : field.TargetFor(point);
+
+            var d = to - from;
+            double dist = d.Length;
+            var aim = dist > 1e-6 ? d / dist : new Vec2(1, 0);
+
+            return new BotMove
+            {
+                IsBonus = bonus,
+                Way = BonusWay.CroquetShot,
+                Placement = placement,
+                Aim = aim,
+                Power = Math.Min(6.0, SpeedFor(dist, c) * 1.1),
+                Note = "straight at " + (field.IsFinished(point) ? "the peg" : field.Labels[point])
+            };
+        }
+
         public BotMove Choose(Game game)
         {
+            if (Simple) return SimpleMove(game);
+
             var m = Search(game, Lookahead, out _);
 
             // The wobble goes on the chosen stroke, not on the search: it knows

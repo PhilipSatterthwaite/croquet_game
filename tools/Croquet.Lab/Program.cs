@@ -34,6 +34,30 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+// Counts every request, so "is the page even talking to the server" can be
+// answered rather than argued about. A page that has stopped asking looks
+// exactly like a server that has stopped answering, and telling them apart by
+// reasoning about the client cost several rounds of guessing.
+var hits = new System.Collections.Concurrent.ConcurrentDictionary<string, int>();
+var lastHit = new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>();
+
+app.Use(async (ctx, next) =>
+{
+    var path = ctx.Request.Path.Value ?? "/";
+    hits.AddOrUpdate(path, 1, (_, n) => n + 1);
+    lastHit[path] = DateTime.Now;
+    await next();
+});
+
+app.MapGet("/api/hits", () => Results.Ok(
+    hits.OrderByDescending(kv => kv.Value)
+        .Select(kv => new
+        {
+            path = kv.Key,
+            count = kv.Value,
+            last = lastHit.TryGetValue(kv.Key, out var t) ? t.ToString("HH:mm:ss") : null
+        })));
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -60,6 +84,7 @@ for (int i = 1; i < game.World.Balls.Length; i++) seats[i] = DefaultSkill;
 // its choice perfectly, which reads as unbeatable with poor ideas.
 var bots = new Dictionary<string, Bot>
 {
+    ["dummy"] = Bot.Dummy(),          // no search at all; a diagnostic
     ["beginner"] = Bot.Beginner(),
     ["casual"] = Bot.Casual(),
     ["steady"] = new Bot(),
@@ -297,11 +322,18 @@ IResult PlayMove(PlayRequest r, string note, double score)
 const string url = "http://localhost:5055";
 app.Urls.Add(url);
 
-Console.WriteLine($"Croquet lab  ->  {url}");
+// Opened at a URL the browser has never seen, so it cannot answer from cache.
+// The page is sent with no-store, but that only takes effect once a fresh copy
+// has been fetched: a copy cached BEFORE that header existed goes on being
+// reused, and a stale page is indistinguishable from a broken game -- it stops
+// asking the server for anything and simply sits there looking frozen.
+var fresh = $"{url}/?v={started:HHmmss}";
+
+Console.WriteLine($"Croquet lab  ->  {fresh}");
 Console.WriteLine("Ctrl+C to stop.");
 if (!args.Contains("--no-open"))
 {
-    try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+    try { Process.Start(new ProcessStartInfo(fresh) { UseShellExecute = true }); }
     catch { /* no browser here; the URL above still works */ }
 }
 

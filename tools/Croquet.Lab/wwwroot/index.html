@@ -217,6 +217,7 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
     <div id="seats"></div>
     <div class="seg" id="setAll">
       <button data-s="you">Mine</button>
+      <button data-s="dummy">Dummy</button>
       <button data-s="beginner">Beginner</button>
       <button data-s="casual">Casual</button>
       <button data-s="steady">Steady</button>
@@ -931,7 +932,7 @@ slider('rS', 'vS', v => v.toFixed(2) + '×');
 // Rebuilt from the state, so it always shows the balls actually in the game and
 // never drifts from what the server thinks. seats[i] is null for your own balls
 // and a strength for the machine's.
-const CYCLE = [null, 'beginner', 'casual', 'steady', 'expert'];
+const CYCLE = [null, 'dummy', 'beginner', 'casual', 'steady', 'expert'];
 const TEAM_NAMES = ['A', 'B', 'C'];
 
 function renderSeats() {
