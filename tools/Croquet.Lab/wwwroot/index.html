@@ -22,6 +22,22 @@ h1{margin:0;font-size:14px;font-weight:650;letter-spacing:.22em;text-transform:u
   border:1px solid #C9857A;color:#7A2A1C;font-size:13px}
 #problem[hidden]{display:none}
 
+/* the running commentary */
+#logCard{margin-top:12px}
+#log{list-style:none;margin:0;padding:0;max-height:190px;overflow-y:auto;
+  font-size:13px;line-height:1.5}
+#log li{display:flex;align-items:baseline;gap:8px;padding:3px 2px;
+  border-top:1px solid var(--l)}
+#log li:first-child{border-top:none}
+#log li i{width:11px;height:11px;border-radius:50%;background:var(--c);flex:none;
+  align-self:center;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
+#log b{font-weight:650;flex:none}
+#log span{flex:1;min-width:0}
+#log em{font-style:normal;color:var(--d);font-size:11px}
+#log li.turn{color:var(--d);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  padding-top:7px}
+#log li.scored{background:#EAF3EC}
+
 .stage{display:flex;gap:10px;align-items:stretch}
 #court{display:block;flex:1;min-width:0;width:100%;height:auto;border-radius:10px;
   touch-action:none;cursor:crosshair;box-shadow:0 2px 10px -4px #0005}
@@ -151,6 +167,11 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   <span class="lbl">Power</span>
   <div id="meter"><div id="meterFill"></div></div>
   <span id="pv">0.0 m/s</span>
+</div>
+
+<div class="card" id="logCard">
+  <h2>What is happening</h2>
+  <ol id="log"></ol>
 </div>
 
 <div id="bonus">
@@ -762,19 +783,54 @@ async function animate(res) {
   });
 
   STATE = res.state;
+  logStroke(res);
   render();
+}
 
+// --- the running commentary -----------------------------------------------
+// The status line is a single field that every later message overwrites, so
+// during a break of a dozen strokes it showed only the last one and the game
+// appeared to be doing nothing. This keeps every stroke.
+const logEl = document.getElementById('log');
+
+function logLine(html, cls) {
+  const li = document.createElement('li');
+  if (cls) li.className = cls;
+  li.innerHTML = html;
+  logEl.appendChild(li);
+  while (logEl.children.length > 200) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function logStroke(res) {
+  const who = res.by;
   const bits = [];
-  if (res.note) bits.push(NAMES[res.by] + ': ' + res.note);
-  if (res.scored.length) bits.push('scored ' + res.scored.join(' + '));
-  if (res.roqueted >= 0) bits.push('roquet on ' + NAMES[res.roqueted]);
-  else if (res.touched >= 0) bits.push('hit ' + NAMES[res.touched] + ' — no shots');
-  res.othersScored.forEach(o => bits.push(NAMES[o.ball] + ' scored ' + o.label));
-  res.broughtIn.forEach(b => bits.push(NAMES[b] + ' off the lawn — brought back in'));
-  if (res.endedByOutOfBounds) bits.push('turn forfeited');
-  if (res.peggedOut) bits.push('staked out');
-  bits.push(res.turnEnded ? 'turn over' : res.shotsLeft + ' shot' + (res.shotsLeft === 1 ? '' : 's') + ' left');
-  msg.textContent = bits.join(' · ');
+
+  if (res.scored.length) bits.push('ran ' + res.scored.join(' and '));
+  if (res.roqueted >= 0) bits.push('roqueted ' + NAMES[res.roqueted]);
+  else if (res.touched >= 0) bits.push('hit ' + NAMES[res.touched] + ', earning nothing');
+  res.othersScored.forEach(o => bits.push('put ' + NAMES[o.ball] + ' through ' + o.label));
+  res.broughtIn.forEach(b =>
+    bits.push((b === who ? 'went' : 'sent ' + NAMES[b]) + ' off the lawn'));
+  if (res.peggedOut) bits.push('and is round');
+  if (!bits.length) bits.push('played and earned nothing');
+
+  const tail = res.turnEnded
+    ? (res.endedByOutOfBounds ? 'turn forfeited' : 'turn over')
+    : res.shotsLeft + ' shot' + (res.shotsLeft === 1 ? '' : 's') + ' left';
+
+  logLine(
+    `<i style="--c:${COLOURS[who]}"></i><b>${NAMES[who]}</b>` +
+    `<span>${bits.join(', ')} <em>— ${tail}${res.note ? ' · ' + res.note : ''}</em></span>`,
+    res.scored.length ? 'scored' : null);
+
+  // Announce the handover, so a turn passing is visible rather than inferred.
+  if (res.turnEnded && STATE && !STATE.winner)
+    logLine(`<span>${NAMES[STATE.striker]} to play — for ` +
+            `${STATE.balls[STATE.striker].target}</span>`, 'turn');
+
+  if (STATE && STATE.winner)
+    logLine(`<span>${STATE.winner.map(i => NAMES[i]).join(' &amp; ')} win</span>`, 'turn');
 }
 
 // --- sidebar --------------------------------------------------------------
@@ -958,6 +1014,8 @@ async function newGame(variant, n) {
   }
 
   await j('/api/new', { balls: n, variant, seats: keep, teams: teamsWanted });
+  logEl.innerHTML = '';
+  logLine('<span>new game</span>', 'turn');
   await pushFeel();
   // The court changes with the variant, so the field has to come back too.
   FIELD = await j('/api/field');
