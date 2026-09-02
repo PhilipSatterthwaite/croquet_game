@@ -29,12 +29,23 @@ const int MaxFrames = 3600;
 
 var variant = Variant.NineWicket;
 var spec = Field.CourtFor(variant);
-Game game = NewGame(variant, 6, spec);
+Game game = NewGame(variant, 6, 0, spec);
 
-// Which balls the machine plays: everything but Blue, so a freshly opened page
-// has an opponent without being asked.
-var botBalls = new HashSet<int>(Enumerable.Range(1, game.World.Balls.Length - 1));
-var bot = new Bot();
+// Which balls the machine plays and how well it plays each. A ball missing
+// from this is yours. Everything but Blue by default, so a freshly opened page
+// has an opponent without being asked for one.
+var seats = new Dictionary<int, string>();
+for (int i = 1; i < game.World.Balls.Length; i++) seats[i] = "normal";
+
+// One bot per strength, reused: they hold no per-game state.
+var bots = new Dictionary<string, Bot>
+{
+    ["fast"] = Bot.Fast(),
+    ["normal"] = new Bot(),
+    ["strong"] = Bot.Strong()
+};
+Bot BotFor(int ball) =>
+    seats.TryGetValue(ball, out var s) && bots.ContainsKey(s) ? bots[s] : bots["normal"];
 
 app.MapGet("/api/field", () =>
 {
@@ -89,53 +100,57 @@ app.MapPost("/api/new", (NewRequest r) =>
     next.ObstacleRestitution = spec.ObstacleRestitution;
     spec = next;
 
-    // Association croquet is a four-ball game.
+    // Association croquet is a four-ball game in two sides; nine wicket takes
+    // whatever split divides the balls evenly.
     int count = variant == Variant.SixWicket ? 4 : Math.Clamp(r.Balls, 2, 6);
-    game = NewGame(variant, count, spec);
+    int teams = variant == Variant.SixWicket ? 2 : r.Teams;
+    if (teams < 2 || count % teams != 0) teams = 0;      // 0 means every ball for itself
+
+    game = NewGame(variant, count, teams, spec);
 
     // Braced deliberately: without them the else binds to the inner if rather
-    // than the outer one, and asking for no bots silently gives you none while
+    // than the outer one, and asking for no seats silently gives you none while
     // asking for some can hand the machine everything.
-    botBalls.Clear();
-    if (r.Bots != null)
+    var kept = new Dictionary<int, string>(seats);
+    seats.Clear();
+    if (r.Seats != null)
     {
-        foreach (var b in r.Bots)
-            if (b >= 0 && b < count) botBalls.Add(b);
+        foreach (var s in r.Seats)
+            if (s.Ball >= 0 && s.Ball < count) seats[s.Ball] = Strength(s.Strength);
     }
     else
     {
-        for (int i = 1; i < count; i++) botBalls.Add(i);   // you are Blue, by default
+        for (int i = 1; i < count; i++)
+            seats[i] = kept.TryGetValue(i, out var was) ? was : "normal";
     }
 
-    bot = MakeBot(r.Strength);
     return Results.Ok(Snapshot());
 });
 
-// Who the machine plays, changeable mid-game rather than only when starting one.
-app.MapPost("/api/bots", (BotsRequest r) =>
+// Who the machine plays and how well, changeable mid-game rather than only
+// when starting one.
+app.MapPost("/api/seats", (SeatsRequest r) =>
 {
-    botBalls.Clear();
-    if (r.Bots != null)
-        foreach (var b in r.Bots)
-            if (b >= 0 && b < game.World.Balls.Length) botBalls.Add(b);
+    seats.Clear();
+    if (r.Seats != null)
+        foreach (var s in r.Seats)
+            if (s.Ball >= 0 && s.Ball < game.World.Balls.Length)
+                seats[s.Ball] = Strength(s.Strength);
 
-    if (!string.IsNullOrEmpty(r.Strength)) bot = MakeBot(r.Strength);
     return Results.Ok(Snapshot());
 });
 
-static Bot MakeBot(string strength) =>
-    strength == "strong" ? Bot.Strong()
-  : strength == "fast" ? Bot.Fast()
-  : new Bot();
+static string Strength(string s) =>
+    s == "fast" || s == "strong" ? s : "normal";
 
 // One stroke by the machine, in the same shape as /api/play so the page can
 // animate it identically. The browser calls this while it is a bot's turn.
 app.MapPost("/api/bot", () =>
 {
     if (game.Winner != null) return Results.BadRequest("the game is over");
-    if (!botBalls.Contains(game.Striker)) return Results.BadRequest("not a bot's turn");
+    if (!seats.ContainsKey(game.Striker)) return Results.BadRequest("not a bot's turn");
 
-    var move = bot.Choose(game);
+    var move = BotFor(game.Striker).Choose(game);
     // Returned straight through: PlayMove already produces an IResult, and
     // wrapping it again buries the whole response under a "value" field.
     return PlayMove(new PlayRequest(move.Aim.X, move.Aim.Y, move.Power,
@@ -157,7 +172,7 @@ app.MapPost("/api/feel", (FeelRequest r) =>
 app.MapPost("/api/play", (PlayRequest r) =>
 {
     if (game.Winner != null) return Results.BadRequest("the game is over");
-    if (botBalls.Contains(game.Striker)) return Results.BadRequest("that ball is the machine's");
+    if (seats.ContainsKey(game.Striker)) return Results.BadRequest("that ball is the machine's");
     return PlayMove(r, null, 0);
 });
 
@@ -266,9 +281,12 @@ app.Run();
 object Snapshot() => new
 {
     striker = game.Striker,
-    strikerIsBot = botBalls.Contains(game.Striker),
-    bots = botBalls.OrderBy(b => b).ToArray(),
-    strength = bot.Lookahead > 0 ? "strong" : bot.SweepAngles <= 20 ? "fast" : "normal",
+    strikerIsBot = seats.ContainsKey(game.Striker),
+    // Ball -> strength, or null where it is yours.
+    seats = Enumerable.Range(0, game.World.Balls.Length)
+                      .Select(i => seats.TryGetValue(i, out var s) ? s : null).ToArray(),
+    teams = game.Side == null ? 0 : game.Side.Distinct().Count(),
+    side = game.Side,
     stroke = game.Stroke.ToString(),
     roquetedBall = game.RoquetedBall,
     shotsLeft = game.ShotsLeft,
@@ -292,22 +310,28 @@ object Snapshot() => new
 
 // Positions are left to Game: balls are not laid out on the lawn at all, and
 // each comes on from the starting spot as its first turn arrives.
-static Game NewGame(Variant variant, int count, CourtSpec spec)
+static Game NewGame(Variant variant, int count, int teams, CourtSpec spec)
 {
     var balls = new Ball[count];
     for (int i = 0; i < count; i++) balls[i] = new Ball(Vec2.Zero);
 
-    // Association croquet is played in sides of two: blue and black against
-    // red and yellow. Nine wicket here is cutthroat, under house rules --
-    // carry-over deadness, and sending a ball out ends the turn.
-    int[] side = variant == Variant.SixWicket ? new[] { 0, 1, 0, 1 } : null;
-    var options = variant == Variant.SixWicket ? RuleOptions.Basic : new RuleOptions();
+    // Sides are cut ACROSS the playing order rather than along it, the way
+    // partners alternate on a lawn: with four balls and two sides that is blue
+    // and black against red and yellow, exactly as the laws set it out.
+    int[] side = null;
+    if (teams >= 2)
+    {
+        side = new int[count];
+        for (int i = 0; i < count; i++) side[i] = i % teams;
+    }
 
+    var options = variant == Variant.SixWicket ? RuleOptions.Basic : new RuleOptions();
     return new Game(new World(balls, Field.For(variant), spec), side, options);
 }
 
-record NewRequest(int Balls, string Variant = null, int[] Bots = null, string Strength = null);
-record BotsRequest(int[] Bots, string Strength = null);
+record Seat(int Ball, string Strength);
+record NewRequest(int Balls, string Variant = null, Seat[] Seats = null, int Teams = 0);
+record SeatsRequest(Seat[] Seats);
 record FeelRequest(double Friction, double Restitution, double ObstacleRestitution);
 
 /// <param name="Way">

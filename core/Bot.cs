@@ -328,6 +328,10 @@ namespace Croquet.Core
         /// dominate everything, then keeping the turn, then being somewhere
         /// useful next stroke.
         /// </summary>
+        /// <summary>Are these two balls on the same side? Cutthroat: only itself.</summary>
+        public static bool SameSide(Game g, int a, int b) =>
+            a == b || (g.Side != null && g.Side[a] == g.Side[b]);
+
         public static double Evaluate(Game before, Game after, StrokeResult r, int me)
         {
             var field = after.World.Field;
@@ -339,7 +343,15 @@ namespace Croquet.Core
             int gained = after.States[me].Point - before.States[me].Point;
             s += gained * 1200;
 
+            // Points other balls were driven through count for their own side,
+            // so putting a partner through its hoop is nearly as good as scoring
+            // and putting an opponent through theirs is a gift.
+            foreach (var (ball, _) in r.OthersScored)
+                s += SameSide(after, me, ball) ? 900 : -750;
+
+            // Winning is winning whichever of our balls did it.
             if (after.Winner != null && after.Winner.Contains(me)) s += 100000;
+            if (after.Winner != null && !after.Winner.Contains(me)) s -= 100000;
             if (r.PeggedOut) s += 3000;
 
             // A roquet is two strokes and the beginning of a break.
@@ -382,6 +394,24 @@ namespace Croquet.Core
                 nearest = Math.Min(nearest, (after.World.Balls[j].Pos - pos).Length);
             }
             if (nearest < double.MaxValue) s -= Math.Min(nearest, 12) * 6;
+
+            // With sides, the game is won by the side and not the ball, so a
+            // partner left near its own hoop is worth something and one sent
+            // into the rough is not.
+            if (after.Side != null)
+            {
+                for (int j = 0; j < after.World.Balls.Length; j++)
+                {
+                    if (j == me || !SameSide(after, me, j)) continue;
+                    if (!after.World.Balls[j].InPlay || after.States[j].Finished) continue;
+
+                    int pp = after.States[j].Point;
+                    if (field.IsFinished(pp)) continue;
+                    double pd = (field.TargetFor(pp) - after.World.Balls[j].Pos).Length;
+                    s -= pd * 5;
+                    if (r.BroughtIn.Contains(j)) s -= 200;   // sent a partner off
+                }
+            }
 
             // Off the edge of the lawn is a poor place to leave a ball even when
             // it costs nothing directly.

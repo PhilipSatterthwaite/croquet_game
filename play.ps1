@@ -18,14 +18,19 @@
 $ErrorActionPreference = 'Stop'
 $url = 'http://localhost:5055'
 
-# Already running? Starting a second one just fails on the port, which reads as
-# a build error and is not one. Open the running lab instead.
-$busy = Get-NetTCPConnection -LocalPort 5055 -State Listen -ErrorAction SilentlyContinue
-if ($busy) {
-    Write-Host "The lab is already running at $url" -ForegroundColor Yellow
-    if ($args -notcontains '--no-open') { Start-Process $url }
-    return
+# Stop anything already running and start fresh.
+#
+# The old behaviour -- notice the port is taken and just open the browser --
+# quietly served whatever code was running when it was last started. Every
+# change made since then was invisible, and the lab looked broken rather than
+# stale. Always running the current build is worth the second it costs.
+$old = Get-CimInstance Win32_Process -Filter "Name='dotnet.exe'" -ErrorAction SilentlyContinue |
+       Where-Object { $_.CommandLine -like '*Croquet.Lab*' }
+foreach ($p in $old) {
+    Write-Host "Stopping the lab already running (pid $($p.ProcessId))..." -ForegroundColor DarkGray
+    Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
 }
+if ($old) { Start-Sleep -Milliseconds 800 }
 
 Push-Location $PSScriptRoot
 try {

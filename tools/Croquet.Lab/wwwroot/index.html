@@ -93,6 +93,16 @@ button.act{width:100%;padding:10px 0;margin-top:6px;border:1px solid var(--l);
   letter-spacing:.1em;text-transform:uppercase;color:var(--d)}
 .seat[data-bot=true]{background:var(--s);border-color:var(--go)}
 .seat[data-bot=true] em{color:var(--go)}
+.seat span.team{font-size:10px;color:var(--d);letter-spacing:.08em}
+
+/* the machine is thinking: indeterminate, because a stroke is one search and
+   there is no honest fraction of it to report */
+#thinking{flex:none;width:90px;height:5px;border-radius:3px;background:var(--l);
+  overflow:hidden}
+#thinking i{display:block;width:40%;height:100%;border-radius:3px;background:var(--go);
+  animation:slide 1s ease-in-out infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+@media(prefers-reduced-motion:reduce){#thinking i{animation:none;width:100%;opacity:.5}}
 
 /* segmented strength picker */
 .seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px}
@@ -113,6 +123,7 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   <h1>Croquet lab</h1>
   <span id="turn"></span>
   <span id="msg"></span>
+  <span id="thinking" hidden><i></i></span>
 </header>
 
 <div class="stage">
@@ -172,18 +183,26 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   <div class="card">
     <h2>Who plays what</h2>
     <div id="seats"></div>
-    <div class="seg" id="strength">
-      <button data-s="fast">Fast</button>
-      <button data-s="normal">Normal</button>
-      <button data-s="strong">Strong</button>
+    <div class="seg" id="setAll">
+      <button data-s="you">All mine</button>
+      <button data-s="fast">All fast</button>
+      <button data-s="normal">All normal</button>
+      <button data-s="strong">All strong</button>
     </div>
     <p class="hint" style="margin-top:8px">
-      Tap a ball to hand it to the machine or take it back. Takes effect at once.
+      Tap a ball to cycle it: yours &rarr; fast &rarr; normal &rarr; strong.
+      Takes effect at once.
     </p>
   </div>
 
   <div class="card">
     <h2>Game</h2>
+    <div class="row" style="margin-bottom:6px"><span>Sides</span><b id="vT">every ball for itself</b></div>
+    <div class="seg" id="teams">
+      <button data-t="0">Cutthroat</button>
+      <button data-t="2">2 teams</button>
+      <button data-t="3">3 teams</button>
+    </div>
     <button class="act" id="new9w4">Nine wicket — 4 balls</button>
     <button class="act" id="new9w6">Nine wicket — 6 balls</button>
     <button class="act" id="new6w">Association — 6 hoops</button>
@@ -599,14 +618,21 @@ async function play(body) {
 // Plays out the machine's turns, one stroke at a time, so each is animated and
 // readable rather than the board jumping to the end of a whole break.
 async function runBot() {
+  const bar = document.getElementById('thinking');
   let guard = 0;
-  while (STATE && !STATE.winner && STATE.strikerIsBot && guard++ < 80) {
-    msg.textContent = NAMES[STATE.striker] + ' is thinking…';
-    let res;
-    try { res = await j('/api/bot'); }
-    catch { msg.textContent = 'server not reachable'; return; }
-    if (!res || !res.frames) { msg.textContent = 'bot refused: ' + JSON.stringify(res); return; }
-    await animate(res);
+  try {
+    while (STATE && !STATE.winner && STATE.strikerIsBot && guard++ < 80) {
+      msg.textContent = NAMES[STATE.striker] + ' is thinking…';
+      bar.hidden = false;
+      let res;
+      try { res = await j('/api/bot'); }
+      catch { msg.textContent = 'server not reachable'; return; }
+      if (!res || !res.frames) { msg.textContent = 'bot refused: ' + JSON.stringify(res); return; }
+      bar.hidden = true;
+      await animate(res);
+    }
+  } finally {
+    bar.hidden = true;
   }
 }
 
@@ -661,11 +687,11 @@ function render() {
       b.setAttribute('aria-pressed', String(bonus && bonus.way === b.dataset.way)));
   }
 
-  const bots = s.bots || [];
+  const seats = s.seats || [];
   document.getElementById('tbl').innerHTML = s.balls.map((b, i) => `
     <tr data-striker="${i === s.striker}" data-off="${!b.inPlay}">
       <td><span class="sw" style="background:${COLOURS[i]}"></span>${NAMES[i]}${
-        bots.includes(i) ? ' <small>bot</small>' : ''}</td>
+        seats[i] ? ` <small>${seats[i]}</small>` : ''}</td>
       <td>${b.finished ? 'round' : (b.started ? b.target : 'not yet in')}</td>
       <td class="dead">${b.dead.length ? b.dead.map(d => NAMES[d]).join(', ') : '—'}</td>
     </tr>`).join('');
@@ -734,23 +760,36 @@ slider('rP', 'vP', v => v.toFixed(1) + ' m/s');
 slider('rS', 'vS', v => v.toFixed(2) + '×');
 
 // --- who plays what -------------------------------------------------------
-// Rebuilt from the state, so it always shows the balls actually in the game
-// and never drifts from what the server thinks.
+// Rebuilt from the state, so it always shows the balls actually in the game and
+// never drifts from what the server thinks. seats[i] is null for your own balls
+// and a strength for the machine's.
+const CYCLE = [null, 'fast', 'normal', 'strong'];
+const TEAM_NAMES = ['A', 'B', 'C'];
+
 function renderSeats() {
   if (!STATE) return;
-  const bots = new Set(STATE.bots || []);
+  const seats = STATE.seats || [];
+  const side = STATE.side;
+
   document.getElementById('seats').innerHTML = STATE.balls.map((b, i) => `
-    <button class="seat" data-i="${i}" data-bot="${bots.has(i)}" style="--c:${COLOURS[i]}">
-      <i></i><b>${NAMES[i]}</b><em>${bots.has(i) ? 'machine' : 'you'}</em>
+    <button class="seat" data-i="${i}" data-bot="${!!seats[i]}" style="--c:${COLOURS[i]}">
+      <i></i><b>${NAMES[i]}</b>
+      ${side ? `<span class="team">side ${TEAM_NAMES[side[i]] || side[i]}</span>` : ''}
+      <em>${seats[i] || 'you'}</em>
     </button>`).join('');
 
-  document.querySelectorAll('#strength button').forEach(btn =>
-    btn.setAttribute('aria-pressed', String(btn.dataset.s === STATE.strength)));
+  document.querySelectorAll('#teams button').forEach(btn =>
+    btn.setAttribute('aria-pressed', String(+btn.dataset.t === (STATE.teams || 0))));
+  document.getElementById('vT').textContent =
+    !STATE.teams ? 'every ball for itself' : STATE.teams + ' teams, cut across the order';
 }
 
-async function setSeats(bots, strength) {
+/// Sends the whole seat map, so the server never has to merge partial updates.
+async function pushSeats(map) {
   if (anim) return;
-  STATE = await j('/api/bots', { bots, strength });
+  const seats = [];
+  map.forEach((s, i) => { if (s) seats.push({ ball: i, strength: s }); });
+  STATE = await j('/api/seats', { seats });
   render();
   await runBot();          // the change may have handed the machine the turn
 }
@@ -759,16 +798,29 @@ document.getElementById('seats').addEventListener('click', e => {
   const btn = e.target.closest('.seat');
   if (!btn || anim) return;
   const i = +btn.dataset.i;
-  const bots = new Set(STATE.bots || []);
-  if (bots.has(i)) bots.delete(i); else bots.add(i);
-  setSeats([...bots], null);
+  const map = (STATE.seats || []).slice();
+  map[i] = CYCLE[(CYCLE.indexOf(map[i] || null) + 1) % CYCLE.length];
+  pushSeats(map);
 });
 
-document.getElementById('strength').addEventListener('click', e => {
+document.getElementById('setAll').addEventListener('click', e => {
   const btn = e.target.closest('button');
   if (!btn || anim) return;
-  setSeats(STATE.bots || [], btn.dataset.s);
+  const to = btn.dataset.s === 'you' ? null : btn.dataset.s;
+  pushSeats(STATE.balls.map(() => to));
 });
+
+document.getElementById('teams').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn || anim) return;
+  teamsWanted = +btn.dataset.t;
+  document.querySelectorAll('#teams button').forEach(b =>
+    b.setAttribute('aria-pressed', String(b === btn)));
+  document.getElementById('vT').textContent =
+    teamsWanted === 0 ? 'every ball for itself — start a new game to apply'
+                      : teamsWanted + ' teams — start a new game to apply';
+});
+let teamsWanted = 0;
 
 const zEl = document.getElementById('rZ');
 function setZoom(z) {
@@ -785,13 +837,15 @@ async function newGame(variant, n) {
   if (anim) return;
   bonus = null; aim = null; pull = 0; pan = { x: 0, y: 0 };
 
-  // Keep whoever the machine was playing, as far as the new ball count allows;
-  // a fresh page leaves it to the server, which gives the machine everything
-  // but Blue.
-  const keep = STATE && STATE.bots ? STATE.bots.filter(b => b < n) : null;
-  const strength = STATE ? STATE.strength : null;
+  // Keep the seats as far as the new ball count allows; a fresh page leaves it
+  // to the server, which gives the machine everything but Blue.
+  let keep = null;
+  if (STATE && STATE.seats) {
+    keep = [];
+    STATE.seats.forEach((s, i) => { if (s && i < n) keep.push({ ball: i, strength: s }); });
+  }
 
-  await j('/api/new', { balls: n, variant, bots: keep, strength });
+  await j('/api/new', { balls: n, variant, seats: keep, teams: teamsWanted });
   await pushFeel();
   // The court changes with the variant, so the field has to come back too.
   FIELD = await j('/api/field');

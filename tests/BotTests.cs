@@ -243,6 +243,83 @@ namespace Croquet.Core.Tests
                 $"the bot scored {botPoints} against a random player's {duffPoints}");
         }
 
+        // ---- sides ---------------------------------------------------------
+
+        static Game TeamGame(int[] side, params (double x, double y)[] at)
+        {
+            var arr = new Ball[4];
+            for (int i = 0; i < 4; i++) arr[i] = new Ball(Vec2.Zero);
+            var g = new Game(new World(arr, Field.NineWicket(), new CourtSpec()),
+                             side, new RuleOptions());
+            for (int i = 0; i < 4; i++)
+            {
+                g.States[i].Started = true;
+                g.World.Balls[i].InPlay = true;
+                g.World.Balls[i].Pos = i < at.Length ? new Vec2(at[i].x, at[i].y)
+                                                     : new Vec2(2.0 + i * 0.8, 14.0);
+            }
+            return g;
+        }
+
+        [Fact]
+        public void Sides_are_cut_across_the_order()
+        {
+            var g = TeamGame(new[] { 0, 1, 0, 1 });
+            Assert.True(Bot.SameSide(g, 0, 2));
+            Assert.True(Bot.SameSide(g, 1, 3));
+            Assert.False(Bot.SameSide(g, 0, 1));
+        }
+
+        [Fact]
+        public void Cutthroat_makes_every_ball_its_own_side()
+        {
+            var g = NewGame();
+            Assert.True(Bot.SameSide(g, 1, 1));
+            Assert.False(Bot.SameSide(g, 0, 1));
+            Assert.False(Bot.SameSide(g, 0, 2));
+        }
+
+        [Fact]
+        public void Driving_a_partner_through_its_hoop_is_worth_more_than_an_opponent()
+        {
+            // Same stroke, same geometry, only the sides differ. Ball 0 drives
+            // ball 1 through wicket 1; as a partner that is nearly a score, as
+            // an opponent it is a gift.
+            double Play(int[] side)
+            {
+                var g = TeamGame(side);
+                var h = g.World.Field.Hoops[0];
+                g.World.Balls[1].Pos = new Vec2(h.Center.X - 0.35, h.Center.Y);
+                g.World.Balls[0].Pos = new Vec2(h.Center.X - 1.4, h.Center.Y);
+                for (int i = 2; i < 4; i++) g.World.Balls[i].Pos = new Vec2(2.0 + i, 13.0);
+
+                var before = g.Clone();
+                var r = g.Play(new Vec2(1, 0), 2.0);
+                Assert.Contains((1, 0), r.OthersScored);
+                return Bot.Evaluate(before, g, r, 0);
+            }
+
+            double asPartner = Play(new[] { 0, 0, 1, 1 });   // 0 and 1 together
+            double asOpponent = Play(new[] { 0, 1, 0, 1 });  // 0 and 1 apart
+
+            output.WriteLine($"partner {asPartner:0} vs opponent {asOpponent:0}");
+            Assert.True(asPartner > asOpponent + 1000,
+                "putting a partner through should be worth far more than putting an opponent through");
+        }
+
+        [Fact]
+        public void It_will_not_send_its_partner_off_the_lawn_for_nothing()
+        {
+            // Partner sitting near the boundary. A stroke that drives it off is
+            // available and must not be the one chosen.
+            var g = TeamGame(new[] { 0, 1, 0, 1 }, (24.0, 13.0), (10.0, 3.0),
+                             (26.5, 13.0), (12.0, 3.0));
+
+            var r = Bot.Fast().PlayStroke(g);
+
+            Assert.DoesNotContain(2, r.BroughtIn);   // ball 2 is ball 0's partner
+        }
+
         [Fact]
         public void A_stroke_is_decided_quickly_enough_to_play_against()
         {
