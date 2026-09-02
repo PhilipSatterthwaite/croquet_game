@@ -910,6 +910,16 @@ document.getElementById('new6w').addEventListener('click', () => newGame('SixWic
 
 window.addEventListener('resize', layout);
 
+// A watchdog, because a turn-based game with an asynchronous opponent has many
+// ways to end up waiting on nobody: a request that failed, a path that forgot
+// to hand over, a tab woken from sleep mid-turn. Rather than rely on every one
+// of them remembering, this notices that it is the machine's turn and nothing
+// is happening, and gets on with it.
+setInterval(() => {
+  if (!STATE || anim || botRunning || STATE.winner || !STATE.strikerIsBot) return;
+  runBot().catch(() => {});
+}, 1500);
+
 (async function boot() {
   FIELD = await j('/api/field');
   STATE = await j('/api/state');
