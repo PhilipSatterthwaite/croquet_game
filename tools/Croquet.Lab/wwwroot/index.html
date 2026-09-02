@@ -81,6 +81,26 @@ tr[data-off=true] td{opacity:.45}
 button.act{width:100%;padding:10px 0;margin-top:6px;border:1px solid var(--l);
   border-radius:9px;background:var(--g);color:var(--t);font:inherit;font-size:13px;
   font-weight:600;cursor:pointer}
+/* who-plays-what seats */
+#seats{display:grid;gap:6px;margin-bottom:10px}
+.seat{display:flex;align-items:center;gap:9px;width:100%;padding:7px 9px;
+  border:1px solid var(--l);border-radius:9px;background:var(--g);color:var(--t);
+  font:inherit;font-size:13px;cursor:pointer;text-align:left}
+.seat i{width:14px;height:14px;border-radius:50%;background:var(--c);flex:none;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
+.seat b{font-weight:600}
+.seat em{margin-left:auto;font-style:normal;font-size:11px;font-weight:650;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--d)}
+.seat[data-bot=true]{background:var(--s);border-color:var(--go)}
+.seat[data-bot=true] em{color:var(--go)}
+
+/* segmented strength picker */
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px}
+.seg button{padding:8px 0;border:1px solid var(--l);border-radius:8px;
+  background:var(--g);color:var(--d);font:inherit;font-size:12px;font-weight:600;
+  cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--go);border-color:var(--go);color:#fff}
+
 .hint{font-size:12px;color:var(--d);margin:10px 2px 0;line-height:1.55}
 kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   padding:1px 5px;font:inherit;font-size:11px}
@@ -150,13 +170,15 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
       <tbody id="tbl"></tbody></table>
   </div>
   <div class="card">
-    <h2>Opponent</h2>
-    <div class="row"><span>Machine plays</span><b id="vB">nobody</b></div>
-    <input type="range" id="rB" min="0" max="5" step="1" value="0">
-    <div class="row"><span>Strength</span><b id="vStr">normal</b></div>
-    <input type="range" id="rStr" min="0" max="2" step="1" value="1">
-    <p class="hint" id="botNote" style="margin-top:2px">
-      You are always Blue. Start a new game to change this.
+    <h2>Who plays what</h2>
+    <div id="seats"></div>
+    <div class="seg" id="strength">
+      <button data-s="fast">Fast</button>
+      <button data-s="normal">Normal</button>
+      <button data-s="strong">Strong</button>
+    </div>
+    <p class="hint" style="margin-top:8px">
+      Tap a ball to hand it to the machine or take it back. Takes effect at once.
     </p>
   </div>
 
@@ -173,7 +195,6 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
 <script>
 const COLOURS = ['#2B5FCE', '#D9342A', '#363D47', '#EFC01F', '#1F6633', '#DB6E0E'];
 const NAMES   = ['Blue', 'Red', 'Black', 'Yellow', 'Green', 'Orange'];
-const STRENGTHS = ['fast', 'normal', 'strong'];
 
 let FIELD = null, STATE = null, anim = null, zoom = 1;
 
@@ -649,6 +670,7 @@ function render() {
       <td class="dead">${b.dead.length ? b.dead.map(d => NAMES[d]).join(', ') : '—'}</td>
     </tr>`).join('');
 
+  renderSeats();
   draw();
   updateShot();
 }
@@ -710,8 +732,43 @@ slider('rR', 'vR', v => v.toFixed(2), pushFeel);
 slider('rO', 'vO', v => v.toFixed(2), pushFeel);
 slider('rP', 'vP', v => v.toFixed(1) + ' m/s');
 slider('rS', 'vS', v => v.toFixed(2) + '×');
-slider('rB', 'vB', v => v === 0 ? 'nobody' : v + (v === 1 ? ' ball' : ' balls'));
-slider('rStr', 'vStr', v => STRENGTHS[v]);
+
+// --- who plays what -------------------------------------------------------
+// Rebuilt from the state, so it always shows the balls actually in the game
+// and never drifts from what the server thinks.
+function renderSeats() {
+  if (!STATE) return;
+  const bots = new Set(STATE.bots || []);
+  document.getElementById('seats').innerHTML = STATE.balls.map((b, i) => `
+    <button class="seat" data-i="${i}" data-bot="${bots.has(i)}" style="--c:${COLOURS[i]}">
+      <i></i><b>${NAMES[i]}</b><em>${bots.has(i) ? 'machine' : 'you'}</em>
+    </button>`).join('');
+
+  document.querySelectorAll('#strength button').forEach(btn =>
+    btn.setAttribute('aria-pressed', String(btn.dataset.s === STATE.strength)));
+}
+
+async function setSeats(bots, strength) {
+  if (anim) return;
+  STATE = await j('/api/bots', { bots, strength });
+  render();
+  await runBot();          // the change may have handed the machine the turn
+}
+
+document.getElementById('seats').addEventListener('click', e => {
+  const btn = e.target.closest('.seat');
+  if (!btn || anim) return;
+  const i = +btn.dataset.i;
+  const bots = new Set(STATE.bots || []);
+  if (bots.has(i)) bots.delete(i); else bots.add(i);
+  setSeats([...bots], null);
+});
+
+document.getElementById('strength').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn || anim) return;
+  setSeats(STATE.bots || [], btn.dataset.s);
+});
 
 const zEl = document.getElementById('rZ');
 function setZoom(z) {
@@ -728,14 +785,13 @@ async function newGame(variant, n) {
   if (anim) return;
   bonus = null; aim = null; pull = 0; pan = { x: 0, y: 0 };
 
-  // You are always Blue; the slider says how many of the others the machine
-  // takes, counting up from Red.
-  const howMany = Math.min(+document.getElementById('rB').value, n - 1);
-  const bots = [];
-  for (let i = 1; i <= howMany; i++) bots.push(i);
-  const strength = STRENGTHS[+document.getElementById('rStr').value];
+  // Keep whoever the machine was playing, as far as the new ball count allows;
+  // a fresh page leaves it to the server, which gives the machine everything
+  // but Blue.
+  const keep = STATE && STATE.bots ? STATE.bots.filter(b => b < n) : null;
+  const strength = STATE ? STATE.strength : null;
 
-  await j('/api/new', { balls: n, variant, bots, strength });
+  await j('/api/new', { balls: n, variant, bots: keep, strength });
   await pushFeel();
   // The court changes with the variant, so the field has to come back too.
   FIELD = await j('/api/field');

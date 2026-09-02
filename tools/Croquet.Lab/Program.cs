@@ -31,8 +31,9 @@ var variant = Variant.NineWicket;
 var spec = Field.CourtFor(variant);
 Game game = NewGame(variant, 6, spec);
 
-// Which balls the machine plays. Ball 0 is yours by default.
-var botBalls = new HashSet<int>();
+// Which balls the machine plays: everything but Blue, so a freshly opened page
+// has an opponent without being asked.
+var botBalls = new HashSet<int>(Enumerable.Range(1, game.World.Balls.Length - 1));
 var bot = new Bot();
 
 app.MapGet("/api/field", () =>
@@ -92,15 +93,40 @@ app.MapPost("/api/new", (NewRequest r) =>
     int count = variant == Variant.SixWicket ? 4 : Math.Clamp(r.Balls, 2, 6);
     game = NewGame(variant, count, spec);
 
+    // Braced deliberately: without them the else binds to the inner if rather
+    // than the outer one, and asking for no bots silently gives you none while
+    // asking for some can hand the machine everything.
     botBalls.Clear();
-    if (r.Bots != null) foreach (var b in r.Bots) if (b >= 0 && b < count) botBalls.Add(b);
+    if (r.Bots != null)
+    {
+        foreach (var b in r.Bots)
+            if (b >= 0 && b < count) botBalls.Add(b);
+    }
+    else
+    {
+        for (int i = 1; i < count; i++) botBalls.Add(i);   // you are Blue, by default
+    }
 
-    bot = r.Strength == "strong" ? Bot.Strong()
-        : r.Strength == "fast" ? Bot.Fast()
-        : new Bot();
-
+    bot = MakeBot(r.Strength);
     return Results.Ok(Snapshot());
 });
+
+// Who the machine plays, changeable mid-game rather than only when starting one.
+app.MapPost("/api/bots", (BotsRequest r) =>
+{
+    botBalls.Clear();
+    if (r.Bots != null)
+        foreach (var b in r.Bots)
+            if (b >= 0 && b < game.World.Balls.Length) botBalls.Add(b);
+
+    if (!string.IsNullOrEmpty(r.Strength)) bot = MakeBot(r.Strength);
+    return Results.Ok(Snapshot());
+});
+
+static Bot MakeBot(string strength) =>
+    strength == "strong" ? Bot.Strong()
+  : strength == "fast" ? Bot.Fast()
+  : new Bot();
 
 // One stroke by the machine, in the same shape as /api/play so the page can
 // animate it identically. The browser calls this while it is a bot's turn.
@@ -242,6 +268,7 @@ object Snapshot() => new
     striker = game.Striker,
     strikerIsBot = botBalls.Contains(game.Striker),
     bots = botBalls.OrderBy(b => b).ToArray(),
+    strength = bot.Lookahead > 0 ? "strong" : bot.SweepAngles <= 20 ? "fast" : "normal",
     stroke = game.Stroke.ToString(),
     roquetedBall = game.RoquetedBall,
     shotsLeft = game.ShotsLeft,
@@ -280,6 +307,7 @@ static Game NewGame(Variant variant, int count, CourtSpec spec)
 }
 
 record NewRequest(int Balls, string Variant = null, int[] Bots = null, string Strength = null);
+record BotsRequest(int[] Bots, string Strength = null);
 record FeelRequest(double Friction, double Restitution, double ObstacleRestitution);
 
 /// <param name="Way">
