@@ -18,6 +18,9 @@ h1{margin:0;font-size:14px;font-weight:650;letter-spacing:.22em;text-transform:u
 /* The page's own idea of when the server it is talking to started. If this is
    older than the last restart, the page itself is stale. */
 #build{margin-left:auto;font-size:10px;color:var(--l);letter-spacing:.08em}
+#problem{margin:0 0 10px;padding:9px 12px;border-radius:9px;background:#F6E3DE;
+  border:1px solid #C9857A;color:#7A2A1C;font-size:13px}
+#problem[hidden]{display:none}
 
 .stage{display:flex;gap:10px;align-items:stretch}
 #court{display:block;flex:1;min-width:0;width:100%;height:auto;border-radius:10px;
@@ -131,6 +134,8 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   <span id="thinking" hidden data-known="false"><i></i></span>
   <span id="build"></span>
 </header>
+
+<p id="problem" hidden></p>
 
 <div class="stage">
   <canvas id="court"></canvas>
@@ -286,6 +291,19 @@ async function j(url, body) {
 
 const failure = e => e.status ? ('the lab said: ' + e.message)
                               : 'lab not reachable — is it still running?';
+
+// A script error used to be invisible: the page simply stopped doing things and
+// looked like a game that would not move. Anything thrown now says so on the
+// page, because the console is not where someone playing is looking.
+function problem(text) {
+  const el = document.getElementById('problem');
+  el.textContent = text;
+  el.hidden = false;
+  console.error(text);
+}
+window.addEventListener('error', e => problem('script error: ' + e.message));
+window.addEventListener('unhandledrejection',
+  e => problem('unhandled: ' + (e.reason && (e.reason.message || e.reason))));
 
 const norm = v => { const L = Math.hypot(v.x, v.y) || 1; return { x: v.x / L, y: v.y / L }; };
 
@@ -716,15 +734,30 @@ async function animate(res) {
   bonus = null; aim = null; pull = 0;
   pan = { x: 0, y: 0 };          // back on the striker for the next shot
   anim = { frames: res.frames, i: 0 };
+
   await new Promise(done => {
+    // Every exit from the loop clears `anim` and resolves. A throw inside a
+    // requestAnimationFrame callback does not propagate to the awaiting code,
+    // so without this an error mid-animation would leave `anim` set forever --
+    // and `anim` is what the watchdog, the safety net and the input handlers
+    // all check before doing anything. One bad frame would wedge the whole
+    // game with no way back.
+    const finish = () => { anim = null; done(); };
+
     (function tick() {
-      const f = anim.frames[Math.min(anim.i | 0, anim.frames.length - 1)];
-      const p = [];
-      for (let k = 0; k < f.length; k += 2) p.push([f[k], f[k + 1]]);
-      draw(p);
-      anim.i += +document.getElementById('rS').value;
-      if (anim.i < anim.frames.length) requestAnimationFrame(tick);
-      else { anim = null; done(); }
+      try {
+        const speed = +document.getElementById('rS').value || 1;
+        const f = anim.frames[Math.min(anim.i | 0, anim.frames.length - 1)];
+        const p = [];
+        for (let k = 0; k < f.length; k += 2) p.push([f[k], f[k + 1]]);
+        draw(p);
+        anim.i += speed;
+        if (anim.i < anim.frames.length) requestAnimationFrame(tick);
+        else finish();
+      } catch (err) {
+        problem('while animating: ' + (err && err.message));
+        finish();
+      }
     })();
   });
 
