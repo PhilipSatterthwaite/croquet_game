@@ -130,6 +130,7 @@ namespace Croquet.Core
             }
 
             if (w != null) w.Step++;
+            double reach = c.BallRadius;
 
             // Six balls at most, so every pair is cheaper than any structure
             // that would avoid testing them.
@@ -148,8 +149,20 @@ namespace Croquet.Core
                 for (int i = 0; i < balls.Length; i++)
                 {
                     if (!balls[i].InPlay) continue;
+
+                    // A ball that has not moved since the top of the substep
+                    // cannot have newly run into anything: the obstacles do not
+                    // move. In a six-ball shot most balls are at rest most of
+                    // the time, so this is the bulk of the work avoided.
+                    if (balls[i].Pos.X == prev[i].X && balls[i].Pos.Y == prev[i].Y) continue;
+
                     foreach (var hoop in w.Field.Hoops)
                     {
+                        // The uprights of a hoop share its x, so one compare
+                        // rules out every hoop the ball is not level with --
+                        // which is nearly all of them, nearly always.
+                        if (Math.Abs(balls[i].Pos.X - hoop.Center.X) > reach + hoop.WireRadius)
+                            continue;
                         Deflect(ref balls[i], hoop.LeftPost, hoop.WireRadius, c);
                         Deflect(ref balls[i], hoop.RightPost, hoop.WireRadius, c);
                     }

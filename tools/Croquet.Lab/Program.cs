@@ -31,6 +31,10 @@ var variant = Variant.NineWicket;
 var spec = Field.CourtFor(variant);
 Game game = NewGame(variant, 6, spec);
 
+// Which balls the machine plays. Ball 0 is yours by default.
+var botBalls = new HashSet<int>();
+var bot = new Bot();
+
 app.MapGet("/api/field", () =>
 {
     var f = game.World.Field;
@@ -87,7 +91,31 @@ app.MapPost("/api/new", (NewRequest r) =>
     // Association croquet is a four-ball game.
     int count = variant == Variant.SixWicket ? 4 : Math.Clamp(r.Balls, 2, 6);
     game = NewGame(variant, count, spec);
+
+    botBalls.Clear();
+    if (r.Bots != null) foreach (var b in r.Bots) if (b >= 0 && b < count) botBalls.Add(b);
+
+    bot = r.Strength == "strong" ? Bot.Strong()
+        : r.Strength == "fast" ? Bot.Fast()
+        : new Bot();
+
     return Results.Ok(Snapshot());
+});
+
+// One stroke by the machine, in the same shape as /api/play so the page can
+// animate it identically. The browser calls this while it is a bot's turn.
+app.MapPost("/api/bot", () =>
+{
+    if (game.Winner != null) return Results.BadRequest("the game is over");
+    if (!botBalls.Contains(game.Striker)) return Results.BadRequest("not a bot's turn");
+
+    var move = bot.Choose(game);
+    // Returned straight through: PlayMove already produces an IResult, and
+    // wrapping it again buries the whole response under a "value" field.
+    return PlayMove(new PlayRequest(move.Aim.X, move.Aim.Y, move.Power,
+                                    move.Way.ToString(),
+                                    move.Placement.X, move.Placement.Y),
+                    move.Note, move.Score);
 });
 
 app.MapPost("/api/feel", (FeelRequest r) =>
@@ -103,7 +131,14 @@ app.MapPost("/api/feel", (FeelRequest r) =>
 app.MapPost("/api/play", (PlayRequest r) =>
 {
     if (game.Winner != null) return Results.BadRequest("the game is over");
+    if (botBalls.Contains(game.Striker)) return Results.BadRequest("that ball is the machine's");
+    return PlayMove(r, null, 0);
+});
 
+// Shared by the human and the machine, so a bot stroke and a played one go
+// through exactly the same path and animate the same way.
+IResult PlayMove(PlayRequest r, string note, double score)
+{
     int striker = game.Striker;
     StrokeKind was = game.Stroke;
 
@@ -171,6 +206,9 @@ app.MapPost("/api/play", (PlayRequest r) =>
         shotsLeft = result.ShotsLeft,
         endedByOutOfBounds = result.EndedByOutOfBounds,
         turnEnded = result.TurnEnded,
+        by = striker,
+        note,
+        score,
         state = Snapshot()
     });
 
@@ -184,7 +222,7 @@ app.MapPost("/api/play", (PlayRequest r) =>
         }
         return f;
     }
-});
+}
 
 const string url = "http://localhost:5055";
 app.Urls.Add(url);
@@ -202,6 +240,8 @@ app.Run();
 object Snapshot() => new
 {
     striker = game.Striker,
+    strikerIsBot = botBalls.Contains(game.Striker),
+    bots = botBalls.OrderBy(b => b).ToArray(),
     stroke = game.Stroke.ToString(),
     roquetedBall = game.RoquetedBall,
     shotsLeft = game.ShotsLeft,
@@ -239,7 +279,7 @@ static Game NewGame(Variant variant, int count, CourtSpec spec)
     return new Game(new World(balls, Field.For(variant), spec), side, options);
 }
 
-record NewRequest(int Balls, string Variant = null);
+record NewRequest(int Balls, string Variant = null, int[] Bots = null, string Strength = null);
 record FeelRequest(double Friction, double Restitution, double ObstacleRestitution);
 
 /// <param name="Way">

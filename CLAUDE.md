@@ -151,6 +151,29 @@ ball can pass through and roll back out, or arrive on the far side round the
 outside. So crossings are counted signed, only when they pass between the
 uprights, and the net is read at the end of the shot.
 
+## The bot
+
+`Bot` plays candidate strokes on **clones of the real Game** and reads the real
+`StrokeResult` back. That is deliberate: an evaluator with its own copy of the
+rules would drift from them silently, and this way the bot can never believe
+something the game would not do.
+
+Candidates are generated the way a player thinks — at each live ball, at the
+hoop in order, at a spot in front of it — and only then topped up with a coarse
+sweep. Blind sampling spends almost all its budget on angles that hit nothing.
+Power is sampled as a **distance to roll** and converted with `v² = 2ad`, so
+"reach that ball" is expressible directly.
+
+`Bot.Fast()` / `new Bot()` / `Bot.Strong()`. Normal is about 190 strokes
+searched in ~110 ms. `Lookahead` costs several times the budget per ply and is
+off by default — the evaluator already rewards the position a stroke leaves, so
+one ply plays a recognisable break.
+
+**It is currently very strong** — it has taken a ball all the way round in a
+single turn. Making it beatable is a separate job from making it good; the
+obvious lever is aim error scaled by a difficulty setting, which does not exist
+yet.
+
 ## Current state
 
 Done and tested: rolling, contact, hoops and pegs as obstacles, the nine-wicket

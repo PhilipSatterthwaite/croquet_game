@@ -150,6 +150,17 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
       <tbody id="tbl"></tbody></table>
   </div>
   <div class="card">
+    <h2>Opponent</h2>
+    <div class="row"><span>Machine plays</span><b id="vB">nobody</b></div>
+    <input type="range" id="rB" min="0" max="5" step="1" value="0">
+    <div class="row"><span>Strength</span><b id="vStr">normal</b></div>
+    <input type="range" id="rStr" min="0" max="2" step="1" value="1">
+    <p class="hint" id="botNote" style="margin-top:2px">
+      You are always Blue. Start a new game to change this.
+    </p>
+  </div>
+
+  <div class="card">
     <h2>Game</h2>
     <button class="act" id="new9w4">Nine wicket — 4 balls</button>
     <button class="act" id="new9w6">Nine wicket — 6 balls</button>
@@ -162,6 +173,7 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
 <script>
 const COLOURS = ['#2B5FCE', '#D9342A', '#363D47', '#EFC01F', '#1F6633', '#DB6E0E'];
 const NAMES   = ['Blue', 'Red', 'Black', 'Yellow', 'Green', 'Orange'];
+const STRENGTHS = ['fast', 'normal', 'strong'];
 
 let FIELD = null, STATE = null, anim = null, zoom = 1;
 
@@ -438,7 +450,7 @@ cv.addEventListener('pointerdown', e => {
     return;
   }
 
-  if (anim || STATE.winner) return;
+  if (anim || STATE.winner || STATE.strikerIsBot) return;
   cv.setPointerCapture(e.pointerId);
 
   if (bonus && bonus.placing) { mode = 'place'; onMove(e); return; }
@@ -541,6 +553,7 @@ function updateShot() {
     Math.min(100, (pull / MAX_PULL) * 100) + '%';
 
   if (!STATE || STATE.winner) return;
+  if (STATE.strikerIsBot) { msg.textContent = NAMES[STATE.striker] + ' to play'; return; }
   const owed = STATE.stroke === 'Bonus';
   if (owed && !bonus) msg.textContent = 'choose how to take the first bonus shot';
   else if (owed && bonus && bonus.placing)
@@ -558,6 +571,25 @@ async function play(body) {
   catch { msg.textContent = 'server not reachable'; return; }
   if (!res || !res.frames) { msg.textContent = 'refused: ' + JSON.stringify(res); return; }
 
+  await animate(res);
+  await runBot();
+}
+
+// Plays out the machine's turns, one stroke at a time, so each is animated and
+// readable rather than the board jumping to the end of a whole break.
+async function runBot() {
+  let guard = 0;
+  while (STATE && !STATE.winner && STATE.strikerIsBot && guard++ < 80) {
+    msg.textContent = NAMES[STATE.striker] + ' is thinking…';
+    let res;
+    try { res = await j('/api/bot'); }
+    catch { msg.textContent = 'server not reachable'; return; }
+    if (!res || !res.frames) { msg.textContent = 'bot refused: ' + JSON.stringify(res); return; }
+    await animate(res);
+  }
+}
+
+async function animate(res) {
   bonus = null; aim = null; pull = 0;
   pan = { x: 0, y: 0 };          // back on the striker for the next shot
   anim = { frames: res.frames, i: 0 };
@@ -577,6 +609,7 @@ async function play(body) {
   render();
 
   const bits = [];
+  if (res.note) bits.push(NAMES[res.by] + ': ' + res.note);
   if (res.scored.length) bits.push('scored ' + res.scored.join(' + '));
   if (res.roqueted >= 0) bits.push('roquet on ' + NAMES[res.roqueted]);
   else if (res.touched >= 0) bits.push('hit ' + NAMES[res.touched] + ' — no shots');
@@ -607,9 +640,11 @@ function render() {
       b.setAttribute('aria-pressed', String(bonus && bonus.way === b.dataset.way)));
   }
 
+  const bots = s.bots || [];
   document.getElementById('tbl').innerHTML = s.balls.map((b, i) => `
     <tr data-striker="${i === s.striker}" data-off="${!b.inPlay}">
-      <td><span class="sw" style="background:${COLOURS[i]}"></span>${NAMES[i]}</td>
+      <td><span class="sw" style="background:${COLOURS[i]}"></span>${NAMES[i]}${
+        bots.includes(i) ? ' <small>bot</small>' : ''}</td>
       <td>${b.finished ? 'round' : (b.started ? b.target : 'not yet in')}</td>
       <td class="dead">${b.dead.length ? b.dead.map(d => NAMES[d]).join(', ') : '—'}</td>
     </tr>`).join('');
@@ -675,6 +710,8 @@ slider('rR', 'vR', v => v.toFixed(2), pushFeel);
 slider('rO', 'vO', v => v.toFixed(2), pushFeel);
 slider('rP', 'vP', v => v.toFixed(1) + ' m/s');
 slider('rS', 'vS', v => v.toFixed(2) + '×');
+slider('rB', 'vB', v => v === 0 ? 'nobody' : v + (v === 1 ? ' ball' : ' balls'));
+slider('rStr', 'vStr', v => STRENGTHS[v]);
 
 const zEl = document.getElementById('rZ');
 function setZoom(z) {
@@ -690,7 +727,15 @@ document.getElementById('zout').addEventListener('click', () => setZoom(zoom - 0
 async function newGame(variant, n) {
   if (anim) return;
   bonus = null; aim = null; pull = 0; pan = { x: 0, y: 0 };
-  await j('/api/new', { balls: n, variant });
+
+  // You are always Blue; the slider says how many of the others the machine
+  // takes, counting up from Red.
+  const howMany = Math.min(+document.getElementById('rB').value, n - 1);
+  const bots = [];
+  for (let i = 1; i <= howMany; i++) bots.push(i);
+  const strength = STRENGTHS[+document.getElementById('rStr').value];
+
+  await j('/api/new', { balls: n, variant, bots, strength });
   await pushFeel();
   // The court changes with the variant, so the field has to come back too.
   FIELD = await j('/api/field');
@@ -703,6 +748,7 @@ async function newGame(variant, n) {
     : 'USCA nine wicket: 14 wickets and two stakes, 16 points a ball. '
       + 'Cutthroat, with carry-over deadness and no turn after sending a ball out.';
   render();
+  await runBot();          // in case the machine has the opening turn
 }
 document.getElementById('new9w4').addEventListener('click', () => newGame('NineWicket', 4));
 document.getElementById('new9w6').addEventListener('click', () => newGame('NineWicket', 6));

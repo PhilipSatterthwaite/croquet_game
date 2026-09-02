@@ -64,6 +64,13 @@ namespace Croquet.Core
         public readonly HashSet<int> Dead = new HashSet<int>();
 
         public bool Finished => Point >= Total;
+
+        public BallState Clone()
+        {
+            var c = new BallState { Point = Point, Total = Total, Started = Started };
+            foreach (var d in Dead) c.Dead.Add(d);
+            return c;
+        }
     }
 
     /// <summary>What a stroke produced. Purely a report; the game is already updated.</summary>
@@ -161,6 +168,35 @@ namespace Croquet.Core
             Side = side;
             Striker = 0;
             EnterLawn(Striker);
+        }
+
+        /// <summary>
+        /// A detached copy that can be played forward without touching this
+        /// one. The field and the court spec are shared -- neither is mutated
+        /// by play -- so a clone is a couple of small arrays.
+        ///
+        /// This is what lets the bot search: it plays candidate strokes on
+        /// clones and reads the REAL StrokeResult back, rather than
+        /// reimplementing the rules in the evaluator and slowly drifting from
+        /// them.
+        /// </summary>
+        public Game Clone()
+        {
+            // Constructed empty and filled afterwards: the constructor brings
+            // the first ball onto the lawn, which would otherwise pick up the
+            // clone's striker and drop it on the starting spot.
+            var g = new Game(new World(new Ball[World.Balls.Length], World.Field, World.Spec),
+                             Side, Options)
+            {
+                Striker = Striker,
+                Stroke = Stroke,
+                RoquetedBall = RoquetedBall,
+                ShotsLeft = ShotsLeft,
+                Winner = Winner
+            };
+            World.Balls.CopyTo(g.World.Balls, 0);
+            for (int i = 0; i < States.Length; i++) g.States[i] = States[i].Clone();
+            return g;
         }
 
         public BallState Current => States[Striker];
