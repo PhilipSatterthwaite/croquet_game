@@ -21,8 +21,25 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 var app = builder.Build();
 
+// Never let a browser cache the page.
+//
+// A cached index.html is indistinguishable from a broken one: the server can be
+// answering perfectly while the page driving it is from an older build and does
+// not even know to ask. That cost real debugging time, and on a dev tool served
+// from localhost there is nothing to gain by caching anyway.
+app.Use(async (ctx, next) =>
+{
+    ctx.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
+    ctx.Response.Headers["Pragma"] = "no-cache";
+    await next();
+});
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// Stamped at startup and shown in the page, so a stale page is visible at a
+// glance rather than something to be deduced.
+var started = DateTime.Now;
 
 const double FrameDt = 1.0 / 60.0;   // playback rate; browser speed is separate
 const int MaxFrames = 3600;
@@ -52,6 +69,7 @@ app.MapGet("/api/field", () =>
     var f = game.World.Field;
     return Results.Ok(new
     {
+        started = started.ToString("HH:mm:ss"),
         variant = f.Variant.ToString(),
         // Which ways the first bonus stroke may be taken. Association croquet
         // allows only the croquet shot; the USCA rules allow all four.

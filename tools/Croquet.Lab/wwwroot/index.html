@@ -15,6 +15,9 @@ header{display:flex;align-items:baseline;gap:14px;margin-bottom:12px;flex-wrap:w
 h1{margin:0;font-size:14px;font-weight:650;letter-spacing:.22em;text-transform:uppercase}
 #turn{font-size:14px;font-weight:600}
 #msg{font-size:13px;color:var(--d)}
+/* The page's own idea of when the server it is talking to started. If this is
+   older than the last restart, the page itself is stale. */
+#build{margin-left:auto;font-size:10px;color:var(--l);letter-spacing:.08em}
 
 .stage{display:flex;gap:10px;align-items:stretch}
 #court{display:block;flex:1;min-width:0;width:100%;height:auto;border-radius:10px;
@@ -124,6 +127,7 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   <span id="turn"></span>
   <span id="msg"></span>
   <span id="thinking" hidden><i></i></span>
+  <span id="build"></span>
 </header>
 
 <div class="stage">
@@ -617,7 +621,16 @@ async function play(body) {
 
 // Plays out the machine's turns, one stroke at a time, so each is animated and
 // readable rather than the board jumping to the end of a whole break.
+let botRunning = false;
+
 async function runBot() {
+  // Re-entrancy guard, because render() also kicks this off and render() is
+  // called from inside the loop. The guard is what lets that safety net exist
+  // at all: any path that updates the state now starts the machine, rather
+  // than only the two paths someone remembered to wire up.
+  if (botRunning) return;
+  botRunning = true;
+
   const bar = document.getElementById('thinking');
   let guard = 0;
   try {
@@ -633,6 +646,7 @@ async function runBot() {
     }
   } finally {
     bar.hidden = true;
+    botRunning = false;
   }
 }
 
@@ -699,6 +713,9 @@ function render() {
   renderSeats();
   draw();
   updateShot();
+
+  // If it is the machine's turn and nothing is in flight, get on with it.
+  if (!anim && !botRunning && !s.winner && s.strikerIsBot) runBot().catch(() => {});
 }
 
 // The ways available depend on the variant: association croquet allows only
@@ -869,6 +886,7 @@ window.addEventListener('resize', layout);
 (async function boot() {
   FIELD = await j('/api/field');
   STATE = await j('/api/state');
+  document.getElementById('build').textContent = 'server up ' + FIELD.started;
   buildWays();
   document.getElementById('variantNote').textContent =
     'USCA nine wicket: 14 wickets and two stakes, 16 points a ball.';
