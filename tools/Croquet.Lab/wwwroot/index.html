@@ -291,11 +291,18 @@ const turnEl = document.getElementById('turn');
 // version could not: any non-JSON body threw, and every failure was reported as
 // unreachable. That sent a real debugging session looking for a dead server
 // that was answering perfectly.
-async function j(url, body) {
-  const r = await fetch(url, body ? {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  } : undefined);
+// The method is explicit rather than inferred from whether a body was passed.
+// Inferring it meant j('/api/bot') -- an endpoint that takes no arguments and
+// so was called with no body -- went out as a GET to a POST-only route and came
+// back 405 every single time. The retry then swallowed it as a benign race, so
+// the machine appeared to sit and think forever while actually being refused
+// several times a second.
+async function j(url, body, method) {
+  const verb = method || (body !== undefined ? 'POST' : 'GET');
+  const r = await fetch(url, verb === 'GET' ? undefined : {
+    method: verb, headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body === undefined ? {} : body)
+  });
 
   const text = await r.text();
   let data = null;
@@ -333,15 +340,29 @@ const norm = v => { const L = Math.hypot(v.x, v.y) || 1; return { x: v.x / L, y:
 const clamp = (v, lo, hi) => hi < lo ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v));
 let scale = 1, viewX = 0, viewY = 0;
 
-function camera() {
+function camera(positions) {
   const vw = FIELD.width / zoom, vh = FIELD.height / zoom;
-  const on = strikerPoint();
+
+  // While a shot is running, follow the ball that is actually travelling.
+  // Centring on where the striker STOOD meant a stroke longer than the
+  // viewport -- and at 3x zoom that is only about 5 metres -- rolled the ball
+  // straight off the edge and left a still picture of an empty lawn.
+  let on = null;
+  if (positions && focusBall >= 0 && positions[focusBall])
+    on = { x: positions[focusBall][0], y: positions[focusBall][1] };
+  else
+    on = strikerPoint();
+
   const cx = (on ? on.x : FIELD.width / 2) + pan.x;
   const cy = (on ? on.y : FIELD.height / 2) + pan.y;
   viewX = clamp(cx - vw / 2, 0, FIELD.width - vw);
   viewY = clamp(cy - vh / 2, 0, FIELD.height - vh);
   scale = cv.clientWidth / vw;
 }
+
+// Which ball the camera watches during a shot: whichever moves furthest, so a
+// foot shot follows the ball that was sent rather than the one held still.
+let focusBall = -1;
 const px = (x, y) => [(x - viewX) * scale, (y - viewY) * scale];
 function toM(sx, sy) {
   const r = cv.getBoundingClientRect();
@@ -377,7 +398,7 @@ function layout() {
 // --- drawing --------------------------------------------------------------
 function draw(positions) {
   if (!FIELD || !STATE) return;
-  camera();
+  camera(positions);
   const pos = positions || STATE.balls.map(b => [b.x, b.y]);
   const w = cv.clientWidth, h = parseFloat(cv.style.height);
 
@@ -687,6 +708,7 @@ async function play(body) {
 // Plays out the machine's turns, one stroke at a time, so each is animated and
 // readable rather than the board jumping to the end of a whole break.
 let botRunning = false;
+let refusals = 0;      // consecutive; a run of them is a fault, not a race
 
 /// Polls the live count of strokes simulated, so the bar tracks the actual
 /// search instead of a timer imitating one. Returns something to stop.
@@ -732,12 +754,20 @@ async function runBot() {
 
       let res;
       try {
-        res = await j('/api/bot');
+        res = await j('/api/bot', undefined, 'POST');
+        refusals = 0;
       } catch (e) {
-        // A refusal here is usually a benign race -- the turn moved on while
-        // the request was in flight. Re-read the state and let the loop decide.
-        if (e.status) { STATE = await j('/api/state').catch(() => STATE); render(); return; }
+        // A refusal is usually a benign race -- the turn moved on while the
+        // request was in flight -- so one is worth retrying quietly. Several in
+        // a row is not a race, it is a fault, and staying quiet about it hid a
+        // 405 for an embarrassingly long time.
+        if (e.status && ++refusals < 3) {
+          STATE = await j('/api/state').catch(() => STATE);
+          render();
+          return;
+        }
         msg.textContent = failure(e);
+        problem('the machine cannot play: ' + failure(e));
         return;
       } finally {
         watch.stop();
@@ -755,6 +785,19 @@ async function runBot() {
 async function animate(res) {
   bonus = null; aim = null; pull = 0;
   pan = { x: 0, y: 0 };          // back on the striker for the next shot
+
+  // Whichever ball travels furthest is the one worth watching.
+  const first = res.frames[0];
+  const last = res.frames[res.frames.length - 1];
+  focusBall = -1;
+  let furthest = -1;
+  for (let i = 0; i * 2 < first.length; i++) {
+    const d = Math.hypot(last[i * 2] - first[i * 2], last[i * 2 + 1] - first[i * 2 + 1]);
+    if (d > furthest) { furthest = d; focusBall = i; }
+  }
+
+  reportRender(res, first, last, furthest);
+
   anim = { frames: res.frames, i: 0 };
 
   await new Promise(done => {
@@ -786,6 +829,37 @@ async function animate(res) {
   STATE = res.state;
   logStroke(res);
   render();
+}
+
+/// Reports what the canvas is about to do with a shot, so the browser's side of
+/// this can be read on the server rather than guessed at. Sends the geometry
+/// that decides whether anything is visible at all: canvas size, the camera,
+/// and where the travelling ball lands in screen pixels at each end of the run.
+function reportRender(res, first, last, furthest) {
+  try {
+    camera();                                     // current view, pre-animation
+    const i = focusBall;
+    const a = px(first[i * 2], first[i * 2 + 1]);
+    const b = px(last[i * 2], last[i * 2 + 1]);
+    const w = cv.clientWidth, h = parseFloat(cv.style.height) || 0;
+    const inside = p => p[0] >= 0 && p[0] <= w && p[1] >= 0 && p[1] <= h;
+
+    fetch('/api/clientlog', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        by: res.by, frames: res.frames.length, focus: i,
+        travelled: +furthest.toFixed(2),
+        canvas: { w, h, bw: cv.width, bh: cv.height, dpr: window.devicePixelRatio || 1 },
+        view: { zoom, viewX: +viewX.toFixed(2), viewY: +viewY.toFixed(2), scale: +scale.toFixed(1) },
+        worldFrom: [ +first[i * 2].toFixed(2), +first[i * 2 + 1].toFixed(2) ],
+        worldTo: [ +last[i * 2].toFixed(2), +last[i * 2 + 1].toFixed(2) ],
+        screenFrom: [ Math.round(a[0]), Math.round(a[1]) ],
+        screenTo: [ Math.round(b[0]), Math.round(b[1]) ],
+        startVisible: inside(a), endVisible: inside(b),
+        hidden: document.hidden
+      })
+    }).catch(() => {});
+  } catch (e) { /* diagnostics must never break play */ }
 }
 
 // --- the running commentary -----------------------------------------------

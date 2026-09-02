@@ -49,6 +49,23 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+// The page reports what it actually drew, so the browser's behaviour can be
+// read here instead of inferred. Reasoning about rendering from the outside is
+// what has gone wrong repeatedly: the server can prove a ball moved and still
+// have no idea what the canvas did with it.
+var clientLog = new System.Collections.Concurrent.ConcurrentQueue<object>();
+
+app.MapPost("/api/clientlog", async (HttpRequest req) =>
+{
+    using var sr = new StreamReader(req.Body);
+    var body = await sr.ReadToEndAsync();
+    clientLog.Enqueue(new { at = DateTime.Now.ToString("HH:mm:ss.fff"), body });
+    while (clientLog.Count > 40) clientLog.TryDequeue(out _);
+    return Results.Ok();
+});
+
+app.MapGet("/api/clientlog", () => Results.Ok(clientLog.ToArray()));
+
 app.MapGet("/api/hits", () => Results.Ok(
     hits.OrderByDescending(kv => kv.Value)
         .Select(kv => new
