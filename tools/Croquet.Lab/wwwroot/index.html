@@ -17,26 +17,14 @@ h1{margin:0;font-size:14px;font-weight:650;letter-spacing:.22em;text-transform:u
 #msg{font-size:13px;color:var(--d)}
 /* The page's own idea of when the server it is talking to started. If this is
    older than the last restart, the page itself is stale. */
+#pause{padding:5px 13px;border:1px solid var(--l);border-radius:99px;background:var(--s);
+  color:var(--d);font:inherit;font-size:11px;font-weight:650;letter-spacing:.1em;
+  text-transform:uppercase;cursor:pointer}
+#pause[data-on=true]{background:#8A5A1C;border-color:#8A5A1C;color:#fff}
 #build{margin-left:auto;font-size:10px;color:var(--l);letter-spacing:.08em}
 #problem{margin:0 0 10px;padding:9px 12px;border-radius:9px;background:#F6E3DE;
   border:1px solid #C9857A;color:#7A2A1C;font-size:13px}
 #problem[hidden]{display:none}
-
-/* the running commentary */
-#logCard{margin-top:12px}
-#log{list-style:none;margin:0;padding:0;max-height:190px;overflow-y:auto;
-  font-size:13px;line-height:1.5}
-#log li{display:flex;align-items:baseline;gap:8px;padding:3px 2px;
-  border-top:1px solid var(--l)}
-#log li:first-child{border-top:none}
-#log li i{width:11px;height:11px;border-radius:50%;background:var(--c);flex:none;
-  align-self:center;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
-#log b{font-weight:650;flex:none}
-#log span{flex:1;min-width:0}
-#log em{font-style:normal;color:var(--d);font-size:11px}
-#log li.turn{color:var(--d);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
-  padding-top:7px}
-#log li.scored{background:#EAF3EC}
 
 .stage{display:flex;gap:10px;align-items:stretch}
 #court{display:block;flex:1;min-width:0;width:100%;height:auto;border-radius:10px;
@@ -105,17 +93,20 @@ button.act{width:100%;padding:10px 0;margin-top:6px;border:1px solid var(--l);
   font-weight:600;cursor:pointer}
 /* who-plays-what seats */
 #seats{display:grid;gap:6px;margin-bottom:10px}
-.seat{display:flex;align-items:center;gap:9px;width:100%;padding:7px 9px;
+.seat{display:flex;align-items:center;gap:8px;width:100%;padding:5px 7px;
   border:1px solid var(--l);border-radius:9px;background:var(--g);color:var(--t);
-  font:inherit;font-size:13px;cursor:pointer;text-align:left}
+  font-size:13px}
 .seat i{width:14px;height:14px;border-radius:50%;background:var(--c);flex:none;
   box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
 .seat b{font-weight:600}
-.seat em{margin-left:auto;font-style:normal;font-size:11px;font-weight:650;
-  letter-spacing:.1em;text-transform:uppercase;color:var(--d)}
-.seat[data-bot=true]{background:var(--s);border-color:var(--go)}
-.seat[data-bot=true] em{color:var(--go)}
 .seat span.team{font-size:10px;color:var(--d);letter-spacing:.08em}
+.seat .who{margin-left:auto}
+.seat button{flex:none;padding:4px 9px;border:1px solid var(--l);border-radius:7px;
+  background:var(--s);color:var(--d);font:inherit;font-size:11px;font-weight:650;
+  letter-spacing:.06em;text-transform:uppercase;cursor:pointer;min-width:74px}
+.seat button:disabled{opacity:.4;cursor:default}
+.seat[data-bot=true]{background:var(--s);border-color:var(--go)}
+.seat[data-bot=true] .who{background:var(--go);border-color:var(--go);color:#fff}
 
 /* the machine is thinking: indeterminate, because a stroke is one search and
    there is no honest fraction of it to report */
@@ -148,6 +139,7 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   <span id="turn"></span>
   <span id="msg"></span>
   <span id="thinking" hidden data-known="false"><i></i></span>
+  <button id="pause">Pause</button>
   <span id="build"></span>
 </header>
 
@@ -167,11 +159,6 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   <span class="lbl">Power</span>
   <div id="meter"><div id="meterFill"></div></div>
   <span id="pv">0.0 m/s</span>
-</div>
-
-<div class="card" id="logCard">
-  <h2>What is happening</h2>
-  <ol id="log"></ol>
 </div>
 
 <div id="bonus">
@@ -216,7 +203,6 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
     <h2>Who plays what</h2>
     <div id="seats"></div>
     <div class="seg" id="setAll">
-      <button data-s="you">Mine</button>
       <button data-s="dummy">Dummy</button>
       <button data-s="beginner">Beginner</button>
       <button data-s="casual">Casual</button>
@@ -224,8 +210,9 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
       <button data-s="expert">Expert</button>
     </div>
     <p class="hint" style="margin-top:8px">
-      Tap a ball to cycle it, or set them all above. Beginner and casual miss
-      by a degree or three; steady and expert do not miss at all.
+      The left half of a row says who plays it; the right says how well. Setting
+      a difficulty here changes every ball the machine already has, and hands it
+      nothing new.
     </p>
   </div>
 
@@ -437,14 +424,19 @@ function draw(positions) {
     ctx.stroke(); ctx.setLineDash([]);
   }
 
-  const wire = Math.max(2, FIELD.hoops[0].wire * scale * 2);
+  // Just the two uprights, no bar between them. The bar read as a wall across
+  // the gap, which is the opposite of what a hoop is: the space between the
+  // posts is the whole point, and it is only a few centimetres wider than a ball.
+  const wire = Math.max(2.5, FIELD.hoops[0].wire * scale * 2);
+  ctx.fillStyle = '#EDF3EE';
   for (const hp of FIELD.hoops) {
     const [cx, cy] = px(hp.x, hp.y);
     const gap = hp.halfGap * scale;
-    ctx.strokeStyle = '#EDF3EE'; ctx.lineWidth = wire; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(cx, cy - gap); ctx.lineTo(cx, cy + gap); ctx.stroke();
-    ctx.fillStyle = '#EDF3EE';
-    for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(cx, cy + s * gap, wire * .9, 0, Math.PI * 2); ctx.fill(); }
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(cx, cy + s * gap, wire, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   for (const peg of FIELD.pegs) {
@@ -695,6 +687,8 @@ function updateShot() {
 maxPowerEl.addEventListener('input', updateShot);
 
 async function play(body) {
+  if (paused) { msg.textContent = 'paused — resume to play'; return; }
+  botStroke = false;                 // this one is yours; animate at full speed
   msg.textContent = 'simulating…';
   let res;
   try { res = await j('/api/play', body); }
@@ -709,6 +703,8 @@ async function play(body) {
 // readable rather than the board jumping to the end of a whole break.
 let botRunning = false;
 let refusals = 0;      // consecutive; a run of them is a fault, not a race
+let botStroke = false; // the stroke being animated belongs to the machine
+let paused = false;    // stop between strokes, so a break can be interrupted
 
 /// Polls the live count of strokes simulated, so the bar tracks the actual
 /// search instead of a timer imitating one. Returns something to stop.
@@ -747,7 +743,7 @@ async function runBot() {
   const bar = document.getElementById('thinking');
   let guard = 0;
   try {
-    while (STATE && !STATE.winner && STATE.strikerIsBot && guard++ < 80) {
+    while (STATE && !STATE.winner && STATE.strikerIsBot && !paused && guard++ < 80) {
       msg.textContent = NAMES[STATE.striker] + ' is thinking…';
       bar.hidden = false;
       const watch = watchProgress(bar);
@@ -756,6 +752,7 @@ async function runBot() {
       try {
         res = await j('/api/bot', undefined, 'POST');
         refusals = 0;
+        botStroke = true;
       } catch (e) {
         // A refusal is usually a benign race -- the turn moved on while the
         // request was in flight -- so one is worth retrying quietly. Several in
@@ -775,9 +772,11 @@ async function runBot() {
 
       bar.hidden = true;
       await animate(res);
+      botStroke = false;
     }
   } finally {
     bar.hidden = true;
+    botStroke = false;
     botRunning = false;
   }
 }
@@ -811,7 +810,11 @@ async function animate(res) {
 
     (function tick() {
       try {
-        const speed = +document.getElementById('rS').value || 1;
+        // The machine's strokes run at half speed. Its own are the ones you
+        // are watching rather than playing, and at full speed a break is a
+        // blur -- the deliberate pace of the deeper search was the part that
+        // felt right, so the animation borrows it.
+        const speed = (+document.getElementById('rS').value || 1) * (botStroke ? 0.5 : 1);
         const f = anim.frames[Math.min(anim.i | 0, anim.frames.length - 1)];
         const p = [];
         for (let k = 0; k < f.length; k += 2) p.push([f[k], f[k + 1]]);
@@ -862,21 +865,10 @@ function reportRender(res, first, last, furthest) {
   } catch (e) { /* diagnostics must never break play */ }
 }
 
-// --- the running commentary -----------------------------------------------
-// The status line is a single field that every later message overwrites, so
-// during a break of a dozen strokes it showed only the last one and the game
-// appeared to be doing nothing. This keeps every stroke.
-const logEl = document.getElementById('log');
-
-function logLine(html, cls) {
-  const li = document.createElement('li');
-  if (cls) li.className = cls;
-  li.innerHTML = html;
-  logEl.appendChild(li);
-  while (logEl.children.length > 200) logEl.removeChild(logEl.firstChild);
-  logEl.scrollTop = logEl.scrollHeight;
-}
-
+// --- the stroke report ----------------------------------------------------
+// One line in the header, replaced each stroke. The scrolling commentary card
+// that used to live in the sidebar is gone: the board itself now shows what
+// happened, and the card only competed with it for attention.
 function logStroke(res) {
   const who = res.by;
   const bits = [];
@@ -888,24 +880,20 @@ function logStroke(res) {
   res.broughtIn.forEach(b =>
     bits.push((b === who ? 'went' : 'sent ' + NAMES[b]) + ' off the lawn'));
   if (res.peggedOut) bits.push('and is round');
-  if (!bits.length) bits.push('played and earned nothing');
+  if (!bits.length) bits.push('earned nothing');
 
   const tail = res.turnEnded
     ? (res.endedByOutOfBounds ? 'turn forfeited' : 'turn over')
     : res.shotsLeft + ' shot' + (res.shotsLeft === 1 ? '' : 's') + ' left';
 
-  logLine(
-    `<i style="--c:${COLOURS[who]}"></i><b>${NAMES[who]}</b>` +
-    `<span>${bits.join(', ')} <em>— ${tail}${res.note ? ' · ' + res.note : ''}</em></span>`,
-    res.scored.length ? 'scored' : null);
-
-  // Announce the handover, so a turn passing is visible rather than inferred.
-  if (res.turnEnded && STATE && !STATE.winner)
-    logLine(`<span>${NAMES[STATE.striker]} to play — for ` +
-            `${STATE.balls[STATE.striker].target}</span>`, 'turn');
+  let line = `${NAMES[who]} ${bits.join(', ')} — ${tail}`;
 
   if (STATE && STATE.winner)
-    logLine(`<span>${STATE.winner.map(i => NAMES[i]).join(' &amp; ')} win</span>`, 'turn');
+    line = STATE.winner.map(i => NAMES[i]).join(' & ') + ' win';
+  else if (res.turnEnded && STATE)
+    line += ` · ${NAMES[STATE.striker]} to play`;
+
+  msg.textContent = line;
 }
 
 // --- sidebar --------------------------------------------------------------
@@ -941,7 +929,7 @@ function render() {
   updateShot();
 
   // If it is the machine's turn and nothing is in flight, get on with it.
-  if (!anim && !botRunning && !s.winner && s.strikerIsBot) runBot().catch(() => {});
+  if (!anim && !botRunning && !paused && !s.winner && s.strikerIsBot) runBot().catch(() => {});
 }
 
 // The ways available depend on the variant: association croquet allows only
@@ -1014,12 +1002,16 @@ function renderSeats() {
   const seats = STATE.seats || [];
   const side = STATE.side;
 
+  // Two separate controls per ball. Who plays it and how well it plays are
+  // different questions, and running them through one cycling button meant
+  // changing a difficulty could quietly take a ball off you.
   document.getElementById('seats').innerHTML = STATE.balls.map((b, i) => `
-    <button class="seat" data-i="${i}" data-bot="${!!seats[i]}" style="--c:${COLOURS[i]}">
+    <div class="seat" data-bot="${!!seats[i]}" style="--c:${COLOURS[i]}">
       <i></i><b>${NAMES[i]}</b>
       ${side ? `<span class="team">side ${TEAM_NAMES[side[i]] || side[i]}</span>` : ''}
-      <em>${seats[i] || 'you'}</em>
-    </button>`).join('');
+      <button class="who" data-i="${i}">${seats[i] ? 'machine' : 'you'}</button>
+      <button class="how" data-i="${i}" ${seats[i] ? '' : 'disabled'}>${seats[i] || '—'}</button>
+    </div>`).join('');
 
   document.querySelectorAll('#teams button').forEach(btn =>
     btn.setAttribute('aria-pressed', String(+btn.dataset.t === (STATE.teams || 0))));
@@ -1037,21 +1029,36 @@ async function pushSeats(map) {
   await runBot();          // the change may have handed the machine the turn
 }
 
+const SKILLS = ['dummy', 'beginner', 'casual', 'steady', 'expert'];
+
 document.getElementById('seats').addEventListener('click', e => {
-  const btn = e.target.closest('.seat');
+  const btn = e.target.closest('button');
   if (!btn || anim) return;
   const i = +btn.dataset.i;
   const map = (STATE.seats || []).slice();
-  map[i] = CYCLE[(CYCLE.indexOf(map[i] || null) + 1) % CYCLE.length];
+
+  if (btn.classList.contains('who')) {
+    // Hand the ball over or take it back, keeping whatever skill it had.
+    map[i] = map[i] ? null : (lastSkill || 'casual');
+  } else {
+    if (!map[i]) return;                       // a ball of yours has no skill
+    map[i] = SKILLS[(SKILLS.indexOf(map[i]) + 1) % SKILLS.length];
+    lastSkill = map[i];
+  }
   pushSeats(map);
 });
 
+// Difficulty applies to the balls the machine ALREADY has. It never hands it a
+// new one -- changing how well the opponent plays should not change who the
+// opponent is.
 document.getElementById('setAll').addEventListener('click', e => {
   const btn = e.target.closest('button');
   if (!btn || anim) return;
-  const to = btn.dataset.s === 'you' ? null : btn.dataset.s;
-  pushSeats(STATE.balls.map(() => to));
+  lastSkill = btn.dataset.s;
+  pushSeats((STATE.seats || []).map(s => s ? lastSkill : null));
 });
+
+let lastSkill = 'casual';
 
 document.getElementById('teams').addEventListener('click', e => {
   const btn = e.target.closest('button');
@@ -1079,6 +1086,7 @@ document.getElementById('zout').addEventListener('click', () => setZoom(zoom - 0
 async function newGame(variant, n) {
   if (anim) return;
   bonus = null; aim = null; pull = 0; pan = { x: 0, y: 0 };
+  resume();          // starting a game is itself the decision to carry on
 
   // Keep the seats as far as the new ball count allows; a fresh page leaves it
   // to the server, which gives the machine everything but Blue.
@@ -1089,8 +1097,7 @@ async function newGame(variant, n) {
   }
 
   await j('/api/new', { balls: n, variant, seats: keep, teams: teamsWanted });
-  logEl.innerHTML = '';
-  logLine('<span>new game</span>', 'turn');
+  msg.textContent = 'new game';
   await pushFeel();
   // The court changes with the variant, so the field has to come back too.
   FIELD = await j('/api/field');
@@ -1109,6 +1116,27 @@ document.getElementById('new9w4').addEventListener('click', () => newGame('NineW
 document.getElementById('new9w6').addEventListener('click', () => newGame('NineWicket', 6));
 document.getElementById('new6w').addEventListener('click', () => newGame('SixWicket', 4));
 
+// Pause takes effect between strokes rather than mid-animation, so the board is
+// always at a position the game agrees with -- which is what makes it safe to
+// start a new game from here.
+const pauseBtn = document.getElementById('pause');
+
+function resume() {
+  paused = false;
+  pauseBtn.dataset.on = false;
+  pauseBtn.textContent = 'Pause';
+}
+
+pauseBtn.addEventListener('click', () => {
+  if (paused) { resume(); runBot().catch(() => {}); return; }
+  paused = true;
+  pauseBtn.dataset.on = true;
+  pauseBtn.textContent = 'Resume';
+  msg.textContent = anim || botRunning
+    ? 'pausing — the machine will stop after this stroke'
+    : 'paused';
+});
+
 window.addEventListener('resize', layout);
 
 // A watchdog, because a turn-based game with an asynchronous opponent has many
@@ -1117,7 +1145,7 @@ window.addEventListener('resize', layout);
 // of them remembering, this notices that it is the machine's turn and nothing
 // is happening, and gets on with it.
 setInterval(() => {
-  if (!STATE || anim || botRunning || STATE.winner || !STATE.strikerIsBot) return;
+  if (!STATE || anim || botRunning || paused || STATE.winner || !STATE.strikerIsBot) return;
   runBot().catch(() => {});
 }, 1500);
 

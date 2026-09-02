@@ -195,9 +195,11 @@ namespace Croquet.Core.Tests
         [Fact]
         public void It_makes_progress_over_a_number_of_turns()
         {
-            // Left to itself against nobody, it should get some way round.
+            // A perfect-aim bot, because this asks whether it can PLAY -- find
+            // hoops, chain strokes, get round -- not how accurate it is. The
+            // levels that miss are measured separately.
             var g = NewGame();
-            var bot = Bot.Casual();
+            var bot = new Bot();
 
             for (int t = 0; t < 12 && g.Winner == null; t++) bot.PlayTurn(g);
 
@@ -318,6 +320,50 @@ namespace Croquet.Core.Tests
             var r = Bot.Casual().PlayStroke(g);
 
             Assert.DoesNotContain(2, r.BroughtIn);   // ball 2 is ball 0's partner
+        }
+
+        [Fact]
+        public void The_levels_are_actually_in_order_of_strength()
+        {
+            // Difficulty should be a measured property, not a hopeful comment
+            // on a constant. Each level plays the same solitary game from the
+            // same position; a better hand should get further round.
+            var levels = new (string Name, Func<Bot> Make)[]
+            {
+                ("beginner", Bot.Beginner),
+                ("casual", Bot.Casual),
+                ("steady", Bot.Steady),
+                ("expert", Bot.Expert)
+            };
+
+            // Strokes taken to get round, not points scored: given enough turns
+            // every level eventually finishes, so points do not separate them.
+            // What a poor hand costs is attempts.
+            var got = new int[levels.Length];
+            for (int i = 0; i < levels.Length; i++)
+            {
+                int total = 0;
+                for (int seed = 0; seed < 3; seed++)      // averaged; the hand wobbles
+                {
+                    var g = NewGame(1);
+                    g.World.Balls[0].Pos = g.World.Field.StartSpot;
+                    var bot = levels[i].Make();
+                    int strokes = 0;
+                    while (g.Winner == null && strokes < 400)
+                    {
+                        bot.PlayStroke(g);
+                        strokes++;
+                    }
+                    total += strokes;
+                }
+                got[i] = total;
+                output.WriteLine($"{levels[i].Name,-9}: {total} strokes to get round 3 times");
+            }
+
+            Assert.True(got[3] < got[0],
+                $"expert took {got[3]} strokes, beginner {got[0]} -- no better");
+            Assert.True(got[2] + got[3] < got[0] + got[1],
+                $"the good half took {got[2] + got[3]}, the poor half {got[0] + got[1]}");
         }
 
         [Fact]

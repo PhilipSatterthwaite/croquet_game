@@ -414,10 +414,17 @@ namespace Croquet.Core
             // stroke went. Applied after the bonus maths so it overrides shots
             // that were genuinely earned. Which balls it applies to is the
             // difference between the two games.
+            // Any ball off the lawn ends the turn, with one exception: the
+            // striker's own ball going off after it has struck another. That is
+            // a stroke that did its work and ran on, not a wasted one -- and it
+            // is the exception the USCA rules make for Option 2A as well.
+            bool onlyStrikerOut = r.BroughtIn.Count == 1 && r.BroughtIn[0] == Striker;
+            bool forgiven = onlyStrikerOut && firstBall >= 0;
+
             bool outEnds = Laws.OutOfBounds == OutPenalty.AnyBall
-                             ? r.BroughtIn.Count > 0
+                             ? r.BroughtIn.Count > 0 && !forgiven
                          : Laws.OutOfBounds == OutPenalty.Striker
-                             ? r.BroughtIn.Contains(Striker)
+                             ? r.BroughtIn.Contains(Striker) && !forgiven
                              : false;
             if (outEnds)
             {

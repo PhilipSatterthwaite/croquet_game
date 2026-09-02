@@ -116,8 +116,8 @@ namespace Croquet.Core
         public static Field For(Variant v, double hoopGap = 0, double wireRadius = 0.006,
                                 double pegRadius = 0.019) =>
             v == Variant.SixWicket
-                ? SixWicket(hoopGap > 0 ? hoopGap : 0.24, wireRadius, pegRadius)
-                : NineWicket(hoopGap > 0 ? hoopGap : 0.34, wireRadius, pegRadius);
+                ? SixWicket(hoopGap > 0 ? hoopGap : 0.10, wireRadius, pegRadius)
+                : NineWicket(hoopGap > 0 ? hoopGap : 0.17, wireRadius, pegRadius);
 
         /// <summary>The court a variant is played on. Sizes come from the rules.</summary>
         public static CourtSpec CourtFor(Variant v) =>
@@ -131,11 +131,10 @@ namespace Croquet.Core
         /// hoop 7, and the two diamonds mirror each other.
         /// </summary>
         /// <param name="hoopGap">
-        /// A real backyard wicket is about 0.17 m against a 0.092 m ball --
-        /// punishingly tight while the game logic is still under test, so the
-        /// default is double that.
+        /// Regulation: 0.17 m against a 0.092 m ball, so under four centimetres
+        /// of daylight either side. Running one is meant to be an achievement.
         /// </param>
-        public static Field NineWicket(double hoopGap = 0.34, double wireRadius = 0.006,
+        public static Field NineWicket(double hoopGap = 0.17, double wireRadius = 0.006,
                                        double pegRadius = 0.019)
         {
             const double mid = 25;      // centre line, feet

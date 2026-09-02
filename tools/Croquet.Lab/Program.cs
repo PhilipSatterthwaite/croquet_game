@@ -104,7 +104,7 @@ var bots = new Dictionary<string, Bot>
     ["dummy"] = Bot.Dummy(),          // no search at all; a diagnostic
     ["beginner"] = Bot.Beginner(),
     ["casual"] = Bot.Casual(),
-    ["steady"] = new Bot(),
+    ["steady"] = Bot.Steady(),
     ["expert"] = Bot.Expert()
 };
 Bot BotFor(int ball) =>

@@ -69,23 +69,54 @@ namespace Croquet.Core
         /// <summary>Power wobble, as a fraction of the intended strength.</summary>
         public double PowerError;
 
-        /// <summary>Barely a player: hits roughly the right way, hard-ish.</summary>
+        /// <summary>
+        /// How much the aim error grows with the length of the shot. A player's
+        /// hand is about as steady whatever the range, but the same angular
+        /// slip costs far more at twenty metres than at two -- and a real player
+        /// is also less certain of the line over distance. Error is scaled by
+        /// 0.6 + range/12, so a two-metre tap is near enough exact and a shot
+        /// across the court is genuinely uncertain.
+        /// </summary>
+        public double RangeError = 1.0;
+
+        // A regulation hoop leaves under four centimetres either side of the
+        // ball, so running one from a metre away needs the line inside about
+        // 0.04 radians. These are set against that: beginner is well outside it
+        // and scores by luck, expert is comfortably inside it and still misses
+        // across the court. Values sized for the old double-width hoops made
+        // every level score nothing at all.
+        //
+        /// <summary>Barely a player. Misses often, and badly at any range.</summary>
         public static Bot Beginner() => new Bot
         {
-            SweepAngles = 12, PlacementAngles = 4,
-            AimError = 0.055, PowerError = 0.22        // about 3 degrees
+            SweepAngles = 10, PlacementAngles = 4,
+            AimError = 0.038, PowerError = 0.26, RangeError = 1.4
         };
 
-        /// <summary>Knows what it is doing but is not accurate.</summary>
+        /// <summary>Knows what to do, is not much good at doing it.</summary>
         public static Bot Casual() => new Bot
         {
-            SweepAngles = 20, PlacementAngles = 6,
-            AimError = 0.016, PowerError = 0.08        // about 1 degree
+            SweepAngles = 18, PlacementAngles = 6,
+            AimError = 0.014, PowerError = 0.11, RangeError = 1.2
         };
 
-        /// <summary>Deeper search, and never misses.</summary>
-        public static Bot Expert() =>
-            new Bot { Lookahead = 1, SweepAngles = 48, PlacementAngles = 12, Deepen = 4 };
+        /// <summary>A sound club player.</summary>
+        public static Bot Steady() => new Bot
+        {
+            SweepAngles = 30, PlacementAngles = 8,
+            AimError = 0.006, PowerError = 0.045, RangeError = 1.0
+        };
+
+        /// <summary>
+        /// An excellent human, not a machine: it looks a stroke further ahead
+        /// and its hand is very good, but it is still a hand. Long shots are
+        /// still missed occasionally, which is what makes it beatable at all.
+        /// </summary>
+        public static Bot Expert() => new Bot
+        {
+            Lookahead = 1, SweepAngles = 48, PlacementAngles = 12, Deepen = 4,
+            AimError = 0.0035, PowerError = 0.02, RangeError = 0.8
+        };
 
         /// <summary>Strokes simulated by the current or last Choose.</summary>
         public volatile int LastSearched;
@@ -158,9 +189,15 @@ namespace Croquet.Core
             // being beatable looks like.
             if (m != null && (AimError > 0 || PowerError > 0))
             {
-                double a = Math.Atan2(m.Aim.Y, m.Aim.X) + Gauss() * AimError;
+                // How far the stroke is meant to send the ball, from v^2 = 2ad.
+                // Range is what the error scales with, so a tap is reliable and
+                // a shot the length of the court is a genuine gamble.
+                double range = m.Power * m.Power / (2 * Math.Max(0.05, game.World.Spec.Friction));
+                double spread = 0.6 + range / 12.0 * RangeError;
+
+                double a = Math.Atan2(m.Aim.Y, m.Aim.X) + Gauss() * AimError * spread;
                 m.Aim = new Vec2(Math.Cos(a), Math.Sin(a));
-                m.Power = Math.Max(0.15, m.Power * (1 + Gauss() * PowerError));
+                m.Power = Math.Max(0.15, m.Power * (1 + Gauss() * PowerError * spread));
                 m.Note += " (roughly)";
             }
             return m;
@@ -499,23 +536,39 @@ namespace Croquet.Core
             }
             if (nearest < double.MaxValue) s -= Math.Min(nearest, 12) * 6;
 
-            // With sides, the game is won by the side and not the ball, so a
-            // partner left near its own hoop is worth something and one sent
-            // into the rough is not.
-            if (after.Side != null)
+            // What the stroke did to everyone else. This is the whole reason a
+            // split or a send is worth playing: the striker gains nothing
+            // directly, but a partner ends up in front of its hoop, or an
+            // opponent ends up in a corner. Scored as the CHANGE in each ball's
+            // distance to its own next point, so pushing an opponent away and
+            // pulling a partner closer both read as gains.
+            for (int j = 0; j < after.World.Balls.Length; j++)
             {
-                for (int j = 0; j < after.World.Balls.Length; j++)
-                {
-                    if (j == me || !SameSide(after, me, j)) continue;
-                    if (!after.World.Balls[j].InPlay || after.States[j].Finished) continue;
+                if (j == me || !after.World.Balls[j].InPlay) continue;
+                if (after.States[j].Finished) continue;
 
-                    int pp = after.States[j].Point;
-                    if (field.IsFinished(pp)) continue;
-                    double pd = (field.TargetFor(pp) - after.World.Balls[j].Pos).Length;
-                    s -= pd * 5;
-                    if (r.BroughtIn.Contains(j)) s -= 200;   // sent a partner off
+                int pp = after.States[j].Point;
+                if (field.IsFinished(pp)) continue;
+
+                var target = field.TargetFor(pp);
+                double closer = (target - before.World.Balls[j].Pos).Length
+                              - (target - after.World.Balls[j].Pos).Length;
+
+                if (SameSide(after, me, j))
+                {
+                    s += closer * 30;
+                    if (r.BroughtIn.Contains(j)) s -= 250;    // sent a partner off
+                }
+                else
+                {
+                    s -= closer * 22;                         // do them no favours
                 }
             }
+
+            // Two shots in hand and nothing to show for the first is a waste:
+            // with a stroke to spare it should be improving something, its own
+            // position or somebody else's.
+            if (r.ShotsLeft >= 2 && r.PointsScored.Count == 0 && r.Roqueted < 0) s -= 150;
 
             // Off the edge of the lawn is a poor place to leave a ball even when
             // it costs nothing directly.

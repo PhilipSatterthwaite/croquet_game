@@ -141,6 +141,67 @@ namespace Croquet.Core.Tests
                     "a ball has to be able to fit through");
         }
 
+        // ---- the uprights really do block ---------------------------------
+
+        [Fact]
+        public void A_regulation_hoop_leaves_under_four_centimetres_either_side()
+        {
+            var f = Field.NineWicket();
+            var c = Lawn();
+            double clear = f.Hoops[0].HalfGap - c.BallRadius;
+            Assert.InRange(clear, 0.03, 0.045);
+        }
+
+        [Theory]
+        [InlineData(1.5)]
+        [InlineData(4.0)]
+        [InlineData(9.0)]
+        public void A_ball_aimed_at_an_upright_never_gets_through(double speed)
+        {
+            // The one that matters at regulation width: at speed a ball covers
+            // more than its own diameter between substeps, and a hoop is only
+            // 17 cm wide. If the uprights can be tunnelled, a ball would score
+            // hoops it never really ran.
+            var f = Field.NineWicket();
+            var c = Lawn();
+            var hoop = f.Hoops[0];
+            var post = hoop.LeftPost;
+
+            var w = Shot(f, c, (post.X - 2.0, post.Y));
+            w.Balls[0].Vel = new Vec2(speed, 0);
+            Sim.Settle(w);
+
+            Assert.False(w.RanPoint(0, 0),
+                $"at {speed} m/s a ball aimed at the upright scored the hoop");
+            Assert.True((w.Balls[0].Pos - post).Length >= c.BallRadius + hoop.WireRadius - 1e-9,
+                "it ended up inside the upright");
+        }
+
+        [Fact]
+        public void A_ball_wider_than_the_gap_cannot_squeeze_through()
+        {
+            // Sweeping the approach across the mouth of the hoop: everything
+            // that scores must have passed between the uprights, and everything
+            // whose centre was outside the clear width must not have.
+            var f = Field.NineWicket();
+            var c = Lawn();
+            var hoop = f.Hoops[0];
+            double clear = hoop.HalfGap - c.BallRadius;
+
+            for (int k = -12; k <= 12; k++)
+            {
+                double offset = k * 0.01;
+                var w = Shot(f, c, (hoop.Center.X - 1.2, hoop.Center.Y + offset));
+                w.Balls[0].Vel = new Vec2(3.0, 0);
+                Sim.Settle(w);
+
+                bool scored = w.RanPoint(0, 0);
+                if (Math.Abs(offset) > clear + 0.02)
+                    Assert.False(scored,
+                        $"a ball {offset:0.###} m off centre ran a hoop with {clear:0.###} m of clearance");
+            }
+        }
+
         // ---- running hoops ------------------------------------------------
 
         static World Shot(Field f, CourtSpec c, params (double x, double y)[] at)
