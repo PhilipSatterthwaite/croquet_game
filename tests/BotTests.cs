@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using Croquet.Core;
 using Xunit;
@@ -188,7 +188,7 @@ namespace Croquet.Core.Tests
         public void A_whole_turn_terminates()
         {
             var g = NewGame();
-            int played = Bot.Fast().PlayTurn(g, maxStrokes: 60);
+            int played = Bot.Casual().PlayTurn(g, maxStrokes: 60);
             Assert.InRange(played, 1, 59);
         }
 
@@ -197,7 +197,7 @@ namespace Croquet.Core.Tests
         {
             // Left to itself against nobody, it should get some way round.
             var g = NewGame();
-            var bot = Bot.Fast();
+            var bot = Bot.Casual();
 
             for (int t = 0; t < 12 && g.Winner == null; t++) bot.PlayTurn(g);
 
@@ -214,7 +214,7 @@ namespace Croquet.Core.Tests
             // game rather than flailing, not that it is any good. Strength is
             // judged by playing it.
             var g = NewGame();
-            var bot = Bot.Fast();
+            var bot = Bot.Casual();
             var dice = new Random(1234);
 
             for (int t = 0; t < 24 && g.Winner == null; t++)
@@ -315,7 +315,7 @@ namespace Croquet.Core.Tests
             var g = TeamGame(new[] { 0, 1, 0, 1 }, (24.0, 13.0), (10.0, 3.0),
                              (26.5, 13.0), (12.0, 3.0));
 
-            var r = Bot.Fast().PlayStroke(g);
+            var r = Bot.Casual().PlayStroke(g);
 
             Assert.DoesNotContain(2, r.BroughtIn);   // ball 2 is ball 0's partner
         }
@@ -335,3 +335,4 @@ namespace Croquet.Core.Tests
         }
     }
 }
+

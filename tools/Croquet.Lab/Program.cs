@@ -51,18 +51,32 @@ Game game = NewGame(variant, 6, 0, spec);
 // Which balls the machine plays and how well it plays each. A ball missing
 // from this is yours. Everything but Blue by default, so a freshly opened page
 // has an opponent without being asked for one.
+const string DefaultSkill = "casual";
 var seats = new Dictionary<int, string>();
-for (int i = 1; i < game.World.Balls.Length; i++) seats[i] = "normal";
+for (int i = 1; i < game.World.Balls.Length; i++) seats[i] = DefaultSkill;
 
-// One bot per strength, reused: they hold no per-game state.
+// One bot per skill, reused: they hold no per-game state. Weakness is aim
+// wobble rather than a smaller search -- a bot that searches less still plays
+// its choice perfectly, which reads as unbeatable with poor ideas.
 var bots = new Dictionary<string, Bot>
 {
-    ["fast"] = Bot.Fast(),
-    ["normal"] = new Bot(),
-    ["strong"] = Bot.Strong()
+    ["beginner"] = Bot.Beginner(),
+    ["casual"] = Bot.Casual(),
+    ["steady"] = new Bot(),
+    ["expert"] = Bot.Expert()
 };
 Bot BotFor(int ball) =>
-    seats.TryGetValue(ball, out var s) && bots.ContainsKey(s) ? bots[s] : bots["normal"];
+    seats.TryGetValue(ball, out var s) && bots.ContainsKey(s) ? bots[s] : bots[DefaultSkill];
+
+string Skill(string s) => s != null && bots.ContainsKey(s) ? s : DefaultSkill;
+
+// Polled while a stroke is being chosen. The count is live, so the bar moves
+// with the actual search rather than with a timer pretending to be one.
+app.MapGet("/api/progress", () =>
+{
+    var b = BotFor(game.Striker);
+    return Results.Ok(new { done = b.LastSearched, total = b.Planned });
+});
 
 app.MapGet("/api/field", () =>
 {
@@ -134,12 +148,12 @@ app.MapPost("/api/new", (NewRequest r) =>
     if (r.Seats != null)
     {
         foreach (var s in r.Seats)
-            if (s.Ball >= 0 && s.Ball < count) seats[s.Ball] = Strength(s.Strength);
+            if (s.Ball >= 0 && s.Ball < count) seats[s.Ball] = Skill(s.Strength);
     }
     else
     {
         for (int i = 1; i < count; i++)
-            seats[i] = kept.TryGetValue(i, out var was) ? was : "normal";
+            seats[i] = kept.TryGetValue(i, out var was) ? was : DefaultSkill;
     }
 
     return Results.Ok(Snapshot());
@@ -153,13 +167,10 @@ app.MapPost("/api/seats", (SeatsRequest r) =>
     if (r.Seats != null)
         foreach (var s in r.Seats)
             if (s.Ball >= 0 && s.Ball < game.World.Balls.Length)
-                seats[s.Ball] = Strength(s.Strength);
+                seats[s.Ball] = Skill(s.Strength);
 
     return Results.Ok(Snapshot());
 });
-
-static string Strength(string s) =>
-    s == "fast" || s == "strong" ? s : "normal";
 
 // One stroke by the machine, in the same shape as /api/play so the page can
 // animate it identically. The browser calls this while it is a bot's turn.

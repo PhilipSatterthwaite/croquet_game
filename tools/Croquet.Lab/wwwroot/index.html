@@ -100,12 +100,14 @@ button.act{width:100%;padding:10px 0;margin-top:6px;border:1px solid var(--l);
 
 /* the machine is thinking: indeterminate, because a stroke is one search and
    there is no honest fraction of it to report */
-#thinking{flex:none;width:90px;height:5px;border-radius:3px;background:var(--l);
+#thinking{flex:none;width:120px;height:6px;border-radius:3px;background:var(--l);
   overflow:hidden}
-#thinking i{display:block;width:40%;height:100%;border-radius:3px;background:var(--go);
-  animation:slide 1s ease-in-out infinite}
+#thinking i{display:block;width:0;height:100%;border-radius:3px;background:var(--go);
+  transition:width .12s linear}
+/* Until the first count arrives there is nothing honest to show, so it sweeps. */
+#thinking[data-known=false] i{width:40%;animation:slide 1s ease-in-out infinite}
 @keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
-@media(prefers-reduced-motion:reduce){#thinking i{animation:none;width:100%;opacity:.5}}
+@media(prefers-reduced-motion:reduce){#thinking[data-known=false] i{animation:none;width:100%;opacity:.5}}
 
 /* segmented strength picker */
 .seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px}
@@ -126,7 +128,7 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   <h1>Croquet lab</h1>
   <span id="turn"></span>
   <span id="msg"></span>
-  <span id="thinking" hidden><i></i></span>
+  <span id="thinking" hidden data-known="false"><i></i></span>
   <span id="build"></span>
 </header>
 
@@ -188,14 +190,15 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
     <h2>Who plays what</h2>
     <div id="seats"></div>
     <div class="seg" id="setAll">
-      <button data-s="you">All mine</button>
-      <button data-s="fast">All fast</button>
-      <button data-s="normal">All normal</button>
-      <button data-s="strong">All strong</button>
+      <button data-s="you">Mine</button>
+      <button data-s="beginner">Beginner</button>
+      <button data-s="casual">Casual</button>
+      <button data-s="steady">Steady</button>
+      <button data-s="expert">Expert</button>
     </div>
     <p class="hint" style="margin-top:8px">
-      Tap a ball to cycle it: yours &rarr; fast &rarr; normal &rarr; strong.
-      Takes effect at once.
+      Tap a ball to cycle it, or set them all above. Beginner and casual miss
+      by a degree or three; steady and expert do not miss at all.
     </p>
   </div>
 
@@ -645,6 +648,32 @@ async function play(body) {
 // readable rather than the board jumping to the end of a whole break.
 let botRunning = false;
 
+/// Polls the live count of strokes simulated, so the bar tracks the actual
+/// search instead of a timer imitating one. Returns something to stop.
+function watchProgress(bar) {
+  bar.dataset.known = 'false';
+  bar.firstElementChild.style.width = '';
+  let stopped = false;
+
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      const p = await j('/api/progress');
+      if (!stopped && p && p.total > 0) {
+        bar.dataset.known = 'true';
+        // Held just short of full: the total is an estimate, and a bar that
+        // sits at 100% while the search runs on is worse than one that does not.
+        const pct = Math.min(96, (p.done / p.total) * 100);
+        bar.firstElementChild.style.width = pct + '%';
+      }
+    } catch { /* the stroke itself will report anything that matters */ }
+    if (!stopped) setTimeout(tick, 90);
+  };
+  setTimeout(tick, 60);
+
+  return { stop() { stopped = true; bar.dataset.known = 'false'; } };
+}
+
 async function runBot() {
   // Re-entrancy guard, because render() also kicks this off and render() is
   // called from inside the loop. The guard is what lets that safety net exist
@@ -659,15 +688,21 @@ async function runBot() {
     while (STATE && !STATE.winner && STATE.strikerIsBot && guard++ < 80) {
       msg.textContent = NAMES[STATE.striker] + ' is thinking…';
       bar.hidden = false;
+      const watch = watchProgress(bar);
+
       let res;
-      try { res = await j('/api/bot'); }
-      catch (e) {
+      try {
+        res = await j('/api/bot');
+      } catch (e) {
         // A refusal here is usually a benign race -- the turn moved on while
         // the request was in flight. Re-read the state and let the loop decide.
         if (e.status) { STATE = await j('/api/state').catch(() => STATE); render(); return; }
         msg.textContent = failure(e);
         return;
+      } finally {
+        watch.stop();
       }
+
       bar.hidden = true;
       await animate(res);
     }
@@ -807,7 +842,7 @@ slider('rS', 'vS', v => v.toFixed(2) + '×');
 // Rebuilt from the state, so it always shows the balls actually in the game and
 // never drifts from what the server thinks. seats[i] is null for your own balls
 // and a strength for the machine's.
-const CYCLE = [null, 'fast', 'normal', 'strong'];
+const CYCLE = [null, 'beginner', 'casual', 'steady', 'expert'];
 const TEAM_NAMES = ['A', 'B', 'C'];
 
 function renderSeats() {

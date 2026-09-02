@@ -57,19 +57,71 @@ namespace Croquet.Core
         /// <summary>Best candidates taken a stroke deeper, when looking ahead.</summary>
         public int Deepen = 3;
 
-        /// <summary>A quick opponent: fewer candidates, no lookahead.</summary>
-        public static Bot Fast() => new Bot { SweepAngles = 20, PlacementAngles = 6 };
+        /// <summary>
+        /// Aim wobble applied to the chosen stroke, in radians, one standard
+        /// deviation. THIS is what makes a weaker opponent, rather than a
+        /// smaller search: a bot that searches less still picks a sensible
+        /// shot and plays it perfectly, which reads as an unbeatable player
+        /// with poor ideas. A bot whose hand shakes misses, like a person.
+        /// </summary>
+        public double AimError;
 
-        /// <summary>A slower, stronger one.</summary>
-        public static Bot Strong() =>
+        /// <summary>Power wobble, as a fraction of the intended strength.</summary>
+        public double PowerError;
+
+        /// <summary>Barely a player: hits roughly the right way, hard-ish.</summary>
+        public static Bot Beginner() => new Bot
+        {
+            SweepAngles = 12, PlacementAngles = 4,
+            AimError = 0.055, PowerError = 0.22        // about 3 degrees
+        };
+
+        /// <summary>Knows what it is doing but is not accurate.</summary>
+        public static Bot Casual() => new Bot
+        {
+            SweepAngles = 20, PlacementAngles = 6,
+            AimError = 0.016, PowerError = 0.08        // about 1 degree
+        };
+
+        /// <summary>Deeper search, and never misses.</summary>
+        public static Bot Expert() =>
             new Bot { Lookahead = 1, SweepAngles = 48, PlacementAngles = 12, Deepen = 4 };
 
-        /// <summary>Strokes simulated by the last Choose. For tuning the budget.</summary>
-        public int LastSearched { get; private set; }
+        /// <summary>Strokes simulated by the current or last Choose.</summary>
+        public volatile int LastSearched;
+
+        /// <summary>Roughly how many it expects to simulate, for a progress bar.</summary>
+        public volatile int Planned;
+
+        readonly Random rng;
+
+        public Bot(int seed = 20260902) { rng = new Random(seed); }
+
+        /// <summary>Normal deviate, for the wobble. Never used inside the simulation.</summary>
+        double Gauss()
+        {
+            double u1 = 1.0 - rng.NextDouble(), u2 = rng.NextDouble();
+            return Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
+        }
 
         // ---- choosing -----------------------------------------------------
 
-        public BotMove Choose(Game game) => Search(game, Lookahead, out _);
+        public BotMove Choose(Game game)
+        {
+            var m = Search(game, Lookahead, out _);
+
+            // The wobble goes on the chosen stroke, not on the search: it knows
+            // what it meant to do and simply fails to do it, which is what
+            // being beatable looks like.
+            if (m != null && (AimError > 0 || PowerError > 0))
+            {
+                double a = Math.Atan2(m.Aim.Y, m.Aim.X) + Gauss() * AimError;
+                m.Aim = new Vec2(Math.Cos(a), Math.Sin(a));
+                m.Power = Math.Max(0.15, m.Power * (1 + Gauss() * PowerError));
+                m.Note += " (roughly)";
+            }
+            return m;
+        }
 
         /// <summary>Chooses and plays one stroke on the real game.</summary>
         public StrokeResult PlayStroke(Game game)
@@ -104,8 +156,8 @@ namespace Croquet.Core
         BotMove Search(Game game, int depth, out double best)
         {
             LastSearched = 0;
-            var move = SearchInner(game, depth, out best);
-            return move;
+            Planned = 0;
+            return SearchInner(game, depth, out best);
         }
 
         BotMove SearchInner(Game game, int depth, out double best)
@@ -114,6 +166,15 @@ namespace Croquet.Core
             var candidates = game.Stroke == StrokeKind.Bonus
                 ? BonusCandidates(game)
                 : OrdinaryCandidates(game);
+
+            // An estimate, set once by the outermost call. Deepening explores
+            // whole candidate sets of its own, so this is the right order of
+            // magnitude rather than an exact count -- which is all a progress
+            // bar needs, and it is honest about being approximate by never
+            // being allowed to read as finished before it is.
+            if (Planned == 0)
+                Planned = System.Linq.Enumerable.Count(candidates)
+                        * (depth > 0 ? 1 + Deepen : 1);
 
             BotMove chosen = null;
             best = double.NegativeInfinity;
