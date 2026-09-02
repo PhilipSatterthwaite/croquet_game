@@ -462,6 +462,10 @@ function draw(positions) {
     ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.stroke();
   });
 
+  // The machine sighting a shot. Drawn under the aiming furniture and above
+  // everything else, because it is the only thing happening at that moment.
+  if (sight) drawSight();
+
   if (positions) return;   // mid-animation: no aiming furniture
 
   // While still choosing where to sit, the ball stays put and the candidate
@@ -502,6 +506,51 @@ function draw(positions) {
   ctx.beginPath();
   ctx.moveTo(ax, top); ctx.lineTo(ax - size, top - size * 1.3); ctx.lineTo(ax + size, top - size * 1.3);
   ctx.closePath(); ctx.fill();
+}
+
+/// The lines the machine is weighing up, and how far along each one has been
+/// drawn. Set by `think`, cleared the moment it strikes.
+let sight = null;
+
+/// Draws the shots under consideration: the rejected ones fading behind, the
+/// one currently being sighted extending from the ball like a player laying a
+/// mallet along the line. Nothing here is invented -- these are the candidates
+/// the search actually rated highest, in the order it rated them.
+function drawSight() {
+  const c = COLOURS[sight.by];
+
+  sight.past.forEach((l, k) => {
+    const age = sight.past.length - k;              // 1 is the most recent
+    const [x1, y1] = px(l.from.x, l.from.y);
+    const [x2, y2] = px(l.to.x, l.to.y);
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.22 / age).toFixed(3) + ')';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  const l = sight.line;
+  if (!l) return;
+  const [x1, y1] = px(l.from.x, l.from.y);
+  const [x2, y2] = px(l.to.x, l.to.y);
+  // Grows along the line rather than appearing whole, which is what reads as
+  // sighting rather than as a line switching on.
+  const t = Math.min(1, sight.grown);
+  const ex = x1 + (x2 - x1) * t, ey = y1 + (y2 - y1) * t;
+
+  ctx.strokeStyle = sight.settled ? 'rgba(255,255,255,.92)' : 'rgba(255,255,255,.5)';
+  ctx.lineWidth = sight.settled ? 2 : 1.5;
+  ctx.setLineDash(sight.settled ? [7, 5] : [5, 5]);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (t >= 1) {
+    ctx.beginPath();
+    ctx.arc(ex, ey, sight.settled ? 4 : 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = sight.settled ? '#fff' : c;
+    ctx.fill();
+  }
 }
 
 /// Where the mallet head sits, in screen px, given the current pull.
@@ -688,7 +737,6 @@ maxPowerEl.addEventListener('input', updateShot);
 
 async function play(body) {
   if (paused) { msg.textContent = 'paused — resume to play'; return; }
-  botStroke = false;                 // this one is yours; animate at full speed
   msg.textContent = 'simulating…';
   let res;
   try { res = await j('/api/play', body); }
@@ -703,7 +751,6 @@ async function play(body) {
 // readable rather than the board jumping to the end of a whole break.
 let botRunning = false;
 let refusals = 0;      // consecutive; a run of them is a fault, not a race
-let botStroke = false; // the stroke being animated belongs to the machine
 let paused = false;    // stop between strokes, so a break can be interrupted
 
 /// Polls the live count of strokes simulated, so the bar tracks the actual
@@ -752,7 +799,6 @@ async function runBot() {
       try {
         res = await j('/api/bot', undefined, 'POST');
         refusals = 0;
-        botStroke = true;
       } catch (e) {
         // A refusal is usually a benign race -- the turn moved on while the
         // request was in flight -- so one is worth retrying quietly. Several in
@@ -771,15 +817,75 @@ async function runBot() {
       }
 
       bar.hidden = true;
+
+      // Sight the shot, then play it at ordinary speed. Slowing the stroke
+      // itself made the ball look wrong; the thing that was missing was the
+      // beat BEFORE it, which is where a player's time actually goes.
+      await think(res);
+      if (paused) return;
       await animate(res);
-      botStroke = false;
+
+      // And a breath afterwards, so a break reads as a sequence of strokes
+      // rather than one continuous motion.
+      await wait(res.turnEnded ? 700 : 450);
     }
   } finally {
     bar.hidden = true;
-    botStroke = false;
+    sight = null;
     botRunning = false;
   }
 }
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/// Plays through the shots the machine weighed up before it strikes. The lines
+/// come from the search itself, so this is a window onto the real decision
+/// rather than a loading animation dressed up as one.
+async function think(res) {
+  const lines = res.sighting;
+  if (!lines || !lines.length || !res.frames.length) { await wait(400); return; }
+
+  // Worst first, best last: the animation converges rather than wanders.
+  const order = lines.slice().reverse();
+
+  // Watch the ball about to play. Without this the camera would still be on
+  // whatever travelled furthest LAST stroke, and sight a shot off-screen.
+  focusBall = res.by;
+  const still = frameToPositions(res.frames[0]);
+
+  sight = { by: res.by, past: [], line: null, grown: 0, settled: false };
+
+  for (let k = 0; k < order.length; k++) {
+    if (paused) { sight = null; return; }
+    const last = k === order.length - 1;
+
+    sight.line = order[k];
+    sight.settled = last;
+    sight.grown = 0;
+
+    // The rejected ones are quick glances; the one it plays is looked at
+    // properly, which is the whole difference between hurried and considered.
+    const ms = last ? 420 : 150;
+    const start = performance.now();
+    while (sight.grown < 1) {
+      sight.grown = Math.min(1, (performance.now() - start) / ms);
+      draw(still);
+      await new Promise(requestAnimationFrame);
+    }
+
+    if (last) await wait(260);       // the pause on the line before striking
+    else sight.past.push(order[k]);
+    if (sight.past.length > 3) sight.past.shift();
+  }
+
+  sight = null;
+}
+
+const frameToPositions = f => {
+  const p = [];
+  for (let k = 0; k < f.length; k += 2) p.push([f[k], f[k + 1]]);
+  return p;
+};
 
 async function animate(res) {
   bonus = null; aim = null; pull = 0;
@@ -810,11 +916,7 @@ async function animate(res) {
 
     (function tick() {
       try {
-        // The machine's strokes run at half speed. Its own are the ones you
-        // are watching rather than playing, and at full speed a break is a
-        // blur -- the deliberate pace of the deeper search was the part that
-        // felt right, so the animation borrows it.
-        const speed = (+document.getElementById('rS').value || 1) * (botStroke ? 0.5 : 1);
+        const speed = +document.getElementById('rS').value || 1;
         const f = anim.frames[Math.min(anim.i | 0, anim.frames.length - 1)];
         const p = [];
         for (let k = 0; k < f.length; k += 2) p.push([f[k], f[k + 1]]);

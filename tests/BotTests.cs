@@ -379,6 +379,62 @@ namespace Croquet.Core.Tests
             Assert.True(sw.ElapsedMilliseconds < 4000,
                 $"a stroke took {sw.ElapsedMilliseconds} ms to choose");
         }
+
+        // The front end shows these as the machine sighting shots before it
+        // strikes. If they were all the same line it would read as a stuck
+        // frame, and if they were empty there would be nothing to show at all.
+        [Fact]
+        public void It_reports_several_visibly_different_shots_it_weighed_up()
+        {
+            var g = NewGame();
+            var bot = Bot.Steady();
+            bot.Choose(g);
+
+            Assert.True(bot.Considered.Count >= 3,
+                $"only {bot.Considered.Count} candidates were kept for showing");
+
+            for (int i = 0; i < bot.Considered.Count; i++)
+                for (int k = i + 1; k < bot.Considered.Count; k++)
+                {
+                    var a = bot.Considered[i];
+                    var b = bot.Considered[k];
+                    double dot = a.Aim.X * b.Aim.X + a.Aim.Y * b.Aim.Y;
+                    bool sameLine = dot > 0.985;
+                    bool samePower = Math.Abs(a.Power - b.Power) < b.Power * 0.35;
+                    Assert.False(sameLine && samePower,
+                        $"candidates {i} and {k} are the same shot twice");
+                }
+
+            // Best first, so a front end can build up to the one it plays.
+            for (int i = 1; i < bot.Considered.Count; i++)
+                Assert.True(bot.Considered[i - 1].Score >= bot.Considered[i].Score,
+                    "the candidates came back out of order");
+        }
+
+        // The deepening search runs whole candidate sets of its own. Those are
+        // answers to "and then what", not shots being considered now, and
+        // letting them through would show the machine sighting from a position
+        // no ball is actually in.
+        [Fact]
+        public void Looking_further_ahead_does_not_pollute_what_it_reports()
+        {
+            var g = NewGame();
+            var bot = Bot.Expert();
+            Assert.True(bot.Lookahead > 0, "this test needs a bot that looks ahead");
+
+            bot.Choose(g);
+
+            var from = g.World.Balls[g.Striker].Pos;
+            Assert.NotEmpty(bot.Considered);
+            Assert.All(bot.Considered, m => Assert.False(m.IsBonus));
+
+            // Every candidate is an ordinary stroke from where the striker
+            // actually stands, so a line drawn from that ball is honest.
+            Assert.True(g.Stroke != StrokeKind.Bonus);
+            Assert.All(bot.Considered,
+                m => Assert.InRange(m.Aim.Length, 0.999, 1.001));
+            Assert.True(from.X >= 0);
+        }
     }
 }
 

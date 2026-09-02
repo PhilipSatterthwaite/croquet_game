@@ -121,6 +121,19 @@ namespace Croquet.Core
         /// <summary>Strokes simulated by the current or last Choose.</summary>
         public volatile int LastSearched;
 
+        /// <summary>
+        /// The strokes the last search rated highest, best first, and the one it
+        /// settled on last of all. Nothing reads this to play -- it is here so a
+        /// front end can show the opponent sighting a few shots before striking.
+        /// A player does not move the instant it is their turn, and an opponent
+        /// that does reads as a machine however well it plays. These are the
+        /// real candidates, so what is shown is what it actually weighed up.
+        /// </summary>
+        public readonly List<BotMove> Considered = new List<BotMove>();
+
+        /// <summary>How many near-distinct candidates to keep for showing.</summary>
+        public int Sightings = 5;
+
         /// <summary>Roughly how many it expects to simulate, for a progress bar.</summary>
         public volatile int Planned;
 
@@ -237,7 +250,41 @@ namespace Croquet.Core
         {
             LastSearched = 0;
             Planned = 0;
+            Considered.Clear();
             return SearchInner(game, depth, out best);
+        }
+
+        /// <summary>
+        /// Keeps the best few candidates that are visibly different from one
+        /// another. The raw top of the list is a dozen versions of the same
+        /// shot at slightly different strengths, which as an animation would
+        /// look like a stuck frame rather than a player weighing up options.
+        /// </summary>
+        void RecordSightings(List<(BotMove Move, double Score, Game After)> scored)
+        {
+            var ranked = new List<(BotMove Move, double Score, Game After)>(scored);
+            ranked.Sort((a, b) => b.Score.CompareTo(a.Score));
+
+            foreach (var (m, s, _) in ranked)
+            {
+                if (Considered.Count >= Sightings) break;
+
+                bool near = false;
+                foreach (var k in Considered)
+                {
+                    // Same line and much the same strength: not a second idea.
+                    double dot = k.Aim.X * m.Aim.X + k.Aim.Y * m.Aim.Y;
+                    if (dot > 0.985 && Math.Abs(k.Power - m.Power) < m.Power * 0.35)
+                    { near = true; break; }
+                }
+                if (near) continue;
+
+                Considered.Add(new BotMove
+                {
+                    IsBonus = m.IsBonus, Way = m.Way, Placement = m.Placement,
+                    Aim = m.Aim, Power = m.Power, Score = s, Note = m.Note
+                });
+            }
         }
 
         BotMove SearchInner(Game game, int depth, out double best)
@@ -296,6 +343,10 @@ namespace Croquet.Core
                 // Discounted: a stroke in hand is worth more than one hoped for.
                 scored[i] = (m, s + follow * 0.75, after);
             }
+
+            // Only the outermost call: the deeper ones are answering "and then
+            // what", which is not a shot being considered now.
+            if (depth == Lookahead) RecordSightings(scored);
 
             foreach (var (m, s, _) in scored)
                 if (s > best) { best = s; chosen = m; }
