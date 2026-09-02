@@ -131,10 +131,12 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
 </div>
 
 <p class="hint">
-  <kbd>drag on the lawn</kbd> to line up the shot, then <kbd>drag the mallet
-  back</kbd> behind the ball and release to strike — further back is harder.
-  <kbd>scroll</kbd> to zoom. The white chevron marks the striker; the dashed
-  ring marks the hoop it is playing for.
+  <kbd>drag near the ball</kbd> to line up — the aim can only be taken from
+  inside the faint ring, so long shots have to be judged rather than clicked.
+  Then <kbd>drag the mallet back</kbd> and release to strike; further back is
+  harder. <kbd>scroll</kbd> to zoom, <kbd>right-drag</kbd> to look around.
+  The white chevron marks the striker; the dashed ring marks the hoop it is
+  playing for.
 </p>
 
 <div class="panel">
@@ -182,6 +184,14 @@ const MAX_PULL = 190;           // px of drag for full power
 const REST_GAP = 16;            // px the mallet head sits off the ball at rest
 const GRAB = 34;                // px around the mallet that starts a pull
 
+// How far from the ball the aim may be taken, in screen px. This is a skill
+// limit, not a convenience: aiming by clicking a ball on the far side of the
+// lawn would be a lever arm the length of the court, and perfectly accurate
+// at any range. Confining it to a short lever means the angle is only as fine
+// as the pixels near the ball, and long shots have to be judged.
+const AIM_RADIUS = 120;
+let pan = { x: 0, y: 0 };       // world-space camera nudge from right-dragging
+
 const cv = document.getElementById('court');
 const ctx = cv.getContext('2d');
 const msg = document.getElementById('msg');
@@ -201,8 +211,10 @@ let scale = 1, viewX = 0, viewY = 0;
 function camera() {
   const vw = FIELD.width / zoom, vh = FIELD.height / zoom;
   const on = strikerPoint();
-  viewX = clamp((on ? on.x : FIELD.width / 2) - vw / 2, 0, FIELD.width - vw);
-  viewY = clamp((on ? on.y : FIELD.height / 2) - vh / 2, 0, FIELD.height - vh);
+  const cx = (on ? on.x : FIELD.width / 2) + pan.x;
+  const cy = (on ? on.y : FIELD.height / 2) + pan.y;
+  viewX = clamp(cx - vw / 2, 0, FIELD.width - vw);
+  viewY = clamp(cy - vh / 2, 0, FIELD.height - vh);
   scale = cv.clientWidth / vw;
 }
 const px = (x, y) => [(x - viewX) * scale, (y - viewY) * scale];
@@ -326,6 +338,14 @@ function draw(positions) {
   if (!from || STATE.winner) return;
   const [ax, ay] = px(from.x, from.y);
 
+  // The ring the aim can be taken from. Drawn so the limit is visible rather
+  // than felt as the aim mysteriously refusing to follow the pointer.
+  ctx.strokeStyle = 'rgba(255,255,255,.22)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 6]);
+  ctx.beginPath(); ctx.arc(ax, ay, AIM_RADIUS, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+
   // The aim line says WHERE and only where; how hard is the mallet behind you.
   if (aim) {
     const len = Math.max(40, 1.6 * scale);
@@ -398,8 +418,23 @@ function canShoot() {
   return !!aim;
 }
 
+let panFrom = null;
+
+cv.addEventListener('contextmenu', e => e.preventDefault());
+
 cv.addEventListener('pointerdown', e => {
-  if (anim || !STATE || STATE.winner) return;
+  if (!STATE) return;
+
+  // Right button looks around. Allowed even mid-animation and after the game
+  // is over -- it changes nothing about the game, only what is on screen.
+  if (e.button === 2) {
+    cv.setPointerCapture(e.pointerId);
+    mode = 'pan';
+    panFrom = { x: e.clientX, y: e.clientY };
+    return;
+  }
+
+  if (anim || STATE.winner) return;
   cv.setPointerCapture(e.pointerId);
 
   if (bonus && bonus.placing) { mode = 'place'; onMove(e); return; }
@@ -423,6 +458,24 @@ cv.addEventListener('pointerdown', e => {
 function onMove(e) {
   const rect = cv.getBoundingClientRect();
 
+  if (mode === 'pan') {
+    // The lawn follows the mouse, so dragging right shows what is to the left.
+    pan.x -= (e.clientX - panFrom.x) / scale;
+    pan.y -= (e.clientY - panFrom.y) / scale;
+    panFrom = { x: e.clientX, y: e.clientY };
+
+    // Keep the pan bounded to somewhere on the lawn. Without this it winds up
+    // arbitrarily far past the edge while the view sits clamped, and dragging
+    // back does nothing until all that slack is unwound.
+    const on = strikerPoint();
+    const bx = on ? on.x : FIELD.width / 2, by = on ? on.y : FIELD.height / 2;
+    pan.x = clamp(pan.x, -bx, FIELD.width - bx);
+    pan.y = clamp(pan.y, -by, FIELD.height - by);
+
+    draw();
+    return;
+  }
+
   if (mode === 'place') {
     const [wx, wy] = toM(e.clientX, e.clientY);
     const other = STATE.balls[STATE.roquetedBall];
@@ -437,7 +490,9 @@ function onMove(e) {
   const dy = e.clientY - rect.top - s[1];
 
   if (mode === 'aim') {
-    if (Math.hypot(dx, dy) < 4) return;         // too close to mean a direction
+    const reach = Math.hypot(dx, dy);
+    if (reach < 4) return;                      // too close to mean a direction
+    if (reach > AIM_RADIUS) return;             // too far to be a fair sighting
     aim = norm({ x: dx, y: dy });
     pull = 0;
   } else if (mode === 'pull') {
@@ -500,6 +555,7 @@ async function play(body) {
   if (!res || !res.frames) { msg.textContent = 'refused: ' + JSON.stringify(res); return; }
 
   bonus = null; aim = null; pull = 0;
+  pan = { x: 0, y: 0 };          // back on the striker for the next shot
   anim = { frames: res.frames, i: 0 };
   await new Promise(done => {
     (function tick() {
@@ -607,7 +663,7 @@ document.getElementById('zout').addEventListener('click', () => setZoom(zoom - 0
 
 async function newGame(n) {
   if (anim) return;
-  bonus = null; aim = null; pull = 0;
+  bonus = null; aim = null; pull = 0; pan = { x: 0, y: 0 };
   await j('/api/new', { balls: n });
   await pushFeel();
   STATE = await j('/api/state');
