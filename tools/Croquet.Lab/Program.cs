@@ -27,22 +27,28 @@ app.UseStaticFiles();
 const double FrameDt = 1.0 / 60.0;   // playback rate; browser speed is separate
 const int MaxFrames = 3600;
 
-var spec = new CourtSpec();
-Game game = NewGame(6, spec);
+var variant = Variant.NineWicket;
+var spec = Field.CourtFor(variant);
+Game game = NewGame(variant, 6, spec);
 
 app.MapGet("/api/field", () =>
 {
     var f = game.World.Field;
     return Results.Ok(new
     {
+        variant = f.Variant.ToString(),
+        // Which ways the first bonus stroke may be taken. Association croquet
+        // allows only the croquet shot; the USCA rules allow all four.
+        bonusWays = game.Laws.FourWaysToTakeCroquet
+            ? new[] { "malletHead", "footShot", "croquetShot", "whereItLies" }
+            : new[] { "croquetShot" },
         width = spec.Width,
         height = spec.Height,
         ballRadius = spec.BallRadius,
         pegRadius = f.PegRadius,
         malletHead = spec.MalletHead,
         startSpot = new[] { f.StartSpot.X, f.StartSpot.Y },
-        homePeg = new[] { f.HomePeg.X, f.HomePeg.Y },
-        turningPeg = new[] { f.TurningPeg.X, f.TurningPeg.Y },
+        pegs = f.Pegs.Select(p => new[] { p.X, p.Y }),
         hoops = f.Hoops.Select(h => new
         {
             x = h.Center.X,
@@ -51,9 +57,9 @@ app.MapGet("/api/field", () =>
             wire = h.WireRadius
         }),
         // Which hoop each course point is, so the page can point at the target.
-        points = Enumerable.Range(0, Field.TotalPoints).Select(p => new
+        points = Enumerable.Range(0, f.TotalPoints).Select(p => new
         {
-            label = Course.Labels[p],
+            label = f.Labels[p],
             peg = f.IsPeg(p),
             hoop = f.HoopFor(p),
             dir = f.DirectionFor(p),
@@ -67,7 +73,20 @@ app.MapGet("/api/state", () => Results.Ok(Snapshot()));
 
 app.MapPost("/api/new", (NewRequest r) =>
 {
-    game = NewGame(Math.Clamp(r.Balls, 2, 6), spec);
+    if (!string.IsNullOrEmpty(r.Variant) && Enum.TryParse<Variant>(r.Variant, true, out var v))
+        variant = v;
+
+    // The court changes with the variant, but the feel does not: friction and
+    // bounce are how the grass plays, and carry across.
+    var next = Field.CourtFor(variant);
+    next.Friction = spec.Friction;
+    next.Restitution = spec.Restitution;
+    next.ObstacleRestitution = spec.ObstacleRestitution;
+    spec = next;
+
+    // Association croquet is a four-ball game.
+    int count = variant == Variant.SixWicket ? 4 : Math.Clamp(r.Balls, 2, 6);
+    game = NewGame(variant, count, spec);
     return Results.Ok(Snapshot());
 });
 
@@ -142,8 +161,9 @@ app.MapPost("/api/play", (PlayRequest r) =>
         frames,
         seconds = steps * FrameDt,
         stroke = was.ToString(),
-        scored = result.PointsScored.Select(p => Course.Labels[p]),
-        othersScored = result.OthersScored.Select(o => new { ball = o.Ball, label = Course.Labels[o.Point] }),
+        scored = result.PointsScored.Select(p => game.World.Field.Labels[p]),
+        othersScored = result.OthersScored.Select(
+            o => new { ball = o.Ball, label = game.World.Field.Labels[o.Point] }),
         roqueted = result.Roqueted,
         touched = result.TouchedButNoRoquet,
         broughtIn = result.BroughtIn,
@@ -197,23 +217,29 @@ object Snapshot() => new
         started = game.States[i].Started,
         finished = game.States[i].Finished,
         point = game.States[i].Point,
-        target = Course.IsFinished(game.States[i].Point)
-                 ? "round" : Course.Labels[game.States[i].Point],
+        target = game.States[i].Finished
+                 ? "round" : game.World.Field.Labels[game.States[i].Point],
         dead = game.States[i].Dead.OrderBy(d => d).ToArray()
     })
 };
 
 // Positions are left to Game: balls are not laid out on the lawn at all, and
 // each comes on from the starting spot as its first turn arrives.
-static Game NewGame(int count, CourtSpec spec)
+static Game NewGame(Variant variant, int count, CourtSpec spec)
 {
     var balls = new Ball[count];
     for (int i = 0; i < count; i++) balls[i] = new Ball(Vec2.Zero);
-    // House rules: deadness carries over, and sending a ball out ends the turn.
-    return new Game(new World(balls, Field.NineWicket(), spec), null, new RuleOptions());
+
+    // Association croquet is played in sides of two: blue and black against
+    // red and yellow. Nine wicket here is cutthroat, under house rules --
+    // carry-over deadness, and sending a ball out ends the turn.
+    int[] side = variant == Variant.SixWicket ? new[] { 0, 1, 0, 1 } : null;
+    var options = variant == Variant.SixWicket ? RuleOptions.Basic : new RuleOptions();
+
+    return new Game(new World(balls, Field.For(variant), spec), side, options);
 }
 
-record NewRequest(int Balls);
+record NewRequest(int Balls, string Variant = null);
 record FeelRequest(double Friction, double Restitution, double ObstacleRestitution);
 
 /// <param name="Way">

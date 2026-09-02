@@ -30,7 +30,7 @@ namespace Croquet.Core.Tests
         public void Every_point_of_the_course_is_a_hoop_or_a_peg()
         {
             var f = F;
-            for (int p = 0; p < Field.TotalPoints; p++)
+            for (int p = 0; p < f.TotalPoints; p++)
             {
                 if (f.IsPeg(p)) Assert.Equal(0, f.DirectionFor(p));
                 else
@@ -46,7 +46,7 @@ namespace Croquet.Core.Tests
         public void Exactly_two_points_are_pegs()
         {
             var f = F;
-            var pegs = Enumerable.Range(0, Field.TotalPoints).Where(f.IsPeg).ToArray();
+            var pegs = Enumerable.Range(0, f.TotalPoints).Where(f.IsPeg).ToArray();
             Assert.Equal(new[] { Field.TurningPegPoint, Field.HomePegPoint }, pegs);
         }
 
@@ -57,7 +57,7 @@ namespace Croquet.Core.Tests
             // 5x2 + 4 = the fourteen wicket points.
             var f = F;
             var uses = new int[f.Hoops.Length];
-            for (int p = 0; p < Field.TotalPoints; p++)
+            for (int p = 0; p < f.TotalPoints; p++)
                 if (!f.IsPeg(p)) uses[f.HoopFor(p)]++;
 
             Assert.Equal(5, uses.Count(u => u == 2));
@@ -71,7 +71,7 @@ namespace Croquet.Core.Tests
             var f = F;
             for (int h = 0; h < f.Hoops.Length; h++)
             {
-                var dirs = Enumerable.Range(0, Field.TotalPoints)
+                var dirs = Enumerable.Range(0, f.TotalPoints)
                                      .Where(p => !f.IsPeg(p) && f.HoopFor(p) == h)
                                      .Select(f.DirectionFor).ToArray();
                 if (dirs.Length == 2)
@@ -92,7 +92,7 @@ namespace Croquet.Core.Tests
                 x = next;
             }
             // Homeward: hoops 8-14 and the home peg, never doubling back.
-            for (int p = Field.TurningPegPoint + 1; p < Field.TotalPoints; p++)
+            for (int p = Field.TurningPegPoint + 1; p < f.TotalPoints; p++)
             {
                 double next = f.TargetFor(p).X;
                 Assert.True(next <= x, $"point {p} steps back up the court");
@@ -306,7 +306,7 @@ namespace Croquet.Core.Tests
             var f = F;
             var c = Lawn();
 
-            for (int p = 0; p < Field.TotalPoints; p++)
+            for (int p = 0; p < f.TotalPoints; p++)
             {
                 if (f.IsPeg(p)) continue;
 
@@ -318,7 +318,7 @@ namespace Croquet.Core.Tests
                 Sim.Settle(w);
 
                 Assert.True(w.RanPoint(0, p),
-                    $"point {p} ({Course.Labels[p]}) was not scored by running its hoop");
+                    $"point {p} ({f.Labels[p]}) was not scored by running its hoop");
             }
         }
 

@@ -42,8 +42,11 @@ namespace Croquet.Core
     /// <summary>The rules-side state of one ball. Physics lives in Ball.</summary>
     public sealed class BallState
     {
-        /// <summary>How far round the course: 0 is for wicket 1, 16 is staked out.</summary>
+        /// <summary>How far round the course: 0 is the first hoop, Total is round.</summary>
         public int Point;
+
+        /// <summary>Points in this variant's course, so Finished needs no field.</summary>
+        public int Total = 16;
 
         /// <summary>
         /// False until this ball's first turn comes round. Balls are not laid
@@ -60,7 +63,7 @@ namespace Croquet.Core
         /// </summary>
         public readonly HashSet<int> Dead = new HashSet<int>();
 
-        public bool Finished => Course.IsFinished(Point);
+        public bool Finished => Point >= Total;
     }
 
     /// <summary>What a stroke produced. Purely a report; the game is already updated.</summary>
@@ -141,14 +144,18 @@ namespace Croquet.Core
         /// <summary>Which Challenging Options are in force.</summary>
         public readonly RuleOptions Options;
 
+        /// <summary>Where this variant's laws differ from the other's.</summary>
+        public readonly Laws Laws;
+
         public Game(World world, int[] side = null, RuleOptions options = null)
         {
             Options = options ?? new RuleOptions();
+            Laws = Laws.For(world.Field.Variant, Options);
             World = world;
             States = new BallState[world.Balls.Length];
             for (int i = 0; i < States.Length; i++)
             {
-                States[i] = new BallState();
+                States[i] = new BallState { Total = world.Field.TotalPoints };
                 world.Balls[i].InPlay = false;      // nothing is on the lawn yet
             }
             Side = side;
@@ -278,7 +285,7 @@ namespace Croquet.Core
             // Points the striker could claim, and when the first of them landed.
             var claimable = new List<(int Point, int Step)>();
             int probe = me.Point;
-            while (!Course.IsFinished(probe))
+            while (!World.Field.IsFinished(probe))
             {
                 int at = World.Field.IsPeg(probe)
                        ? World.StepHitPeg(Striker, probe)
@@ -289,30 +296,22 @@ namespace Croquet.Core
             }
             int firstPointStep = claimable.Count > 0 ? claimable[0].Step : int.MaxValue;
 
-            // Whichever came first wins outright. A wicket then a ball: the
-            // wicket counts, the contact is nothing. A ball then a wicket: two
-            // shots for the roquet and the wicket does not count.
-            bool roquet = firstBall >= 0
-                       && !deadAtStart.Contains(firstBall)
-                       && contactStep < firstPointStep;
+            // A ball hit before the striker started to run its hoop is a roquet
+            // in both games, and the hoop then does not count. A ball hit AFTER
+            // the hoop is where they part company: association croquet gives
+            // you both, the USCA rules ignore the contact.
+            bool liveContact = firstBall >= 0 && !deadAtStart.Contains(firstBall);
+            bool contactFirst = contactStep < firstPointStep;
+            bool roquet = liveContact && (contactFirst || Laws.HoopAndRoquetBothCount);
+            bool scores = !contactFirst || !liveContact;
 
-            int earned;
-            if (roquet)
+            if (scores)
             {
-                r.Roqueted = firstBall;
-                me.Dead.Add(firstBall);
-                RoquetedBall = firstBall;
-                earned = 2;
-            }
-            else
-            {
-                if (firstBall >= 0) r.TouchedButNoRoquet = firstBall;
-
                 foreach (var (point, at) in claimable)
                 {
                     me.Point++;
                     r.PointsScored.Add(point);
-                    if (!World.Field.IsPeg(point)) me.Dead.Clear();   // a wicket revives you
+                    if (!World.Field.IsPeg(point)) me.Dead.Clear();   // a hoop revives you
                     if (me.Finished)
                     {
                         World.Balls[Striker].InPlay = false;
@@ -320,16 +319,34 @@ namespace Croquet.Core
                         break;
                     }
                 }
-                // Never three. Two wickets in a stroke earn two, and so does a
-                // wicket plus the turning stake.
-                earned = Math.Min(2, r.PointsScored.Count);
             }
+
+            if (roquet && !r.PeggedOut)
+            {
+                r.Roqueted = firstBall;
+                me.Dead.Add(firstBall);
+                RoquetedBall = firstBall;
+            }
+            else
+            {
+                roquet = false;
+                if (firstBall >= 0) r.TouchedButNoRoquet = firstBall;
+            }
+
+            // A roquet is worth two either way: the croquet stroke and the
+            // continuation. Hoops are worth one each under the USCA rules, to a
+            // ceiling of two -- but exactly one in association croquet, however
+            // many were run (Law 19.3).
+            int earned = roquet ? 2
+                       : r.PointsScored.Count == 0 ? 0
+                       : Laws.ContinuationsAreNonCumulative ? 1
+                       : Math.Min(2, r.PointsScored.Count);
 
             // A ball driven through its own wicket by someone else scores the
             // point for its side -- but earns nobody a bonus shot.
             for (int i = 0; i < World.Balls.Length; i++)
             {
-                if (i == Striker || States[i].Finished) continue;
+                if (i == Striker || States[i].Finished || !States[i].Started) continue;
                 while (!States[i].Finished)
                 {
                     int p = States[i].Point;
@@ -357,10 +374,16 @@ namespace Croquet.Core
             // Bonuses do not accumulate: earning any forfeits what was owed.
             ShotsLeft = earned > 0 ? earned : ShotsLeft - 1;
 
-            // Option 2A: sending anything off the lawn ends the turn, however
-            // well the rest of the stroke went. Applied after the bonus maths
-            // so it overrides shots that were genuinely earned.
-            if (Options.OutOfBoundsEndsTurn && r.BroughtIn.Count > 0)
+            // Leaving the court ends the turn, however well the rest of the
+            // stroke went. Applied after the bonus maths so it overrides shots
+            // that were genuinely earned. Which balls it applies to is the
+            // difference between the two games.
+            bool outEnds = Laws.OutOfBounds == OutPenalty.AnyBall
+                             ? r.BroughtIn.Count > 0
+                         : Laws.OutOfBounds == OutPenalty.Striker
+                             ? r.BroughtIn.Contains(Striker)
+                             : false;
+            if (outEnds)
             {
                 ShotsLeft = 0;
                 r.EndedByOutOfBounds = true;

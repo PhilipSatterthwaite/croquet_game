@@ -153,10 +153,9 @@ namespace Croquet.Core
                         Deflect(ref balls[i], hoop.LeftPost, hoop.WireRadius, c);
                         Deflect(ref balls[i], hoop.RightPost, hoop.WireRadius, c);
                     }
-                    if (Deflect(ref balls[i], w.Field.HomePeg, w.Field.PegRadius, c))
-                        w.NotePeg(i, Field.HomePegPoint);
-                    if (Deflect(ref balls[i], w.Field.TurningPeg, w.Field.PegRadius, c))
-                        w.NotePeg(i, Field.TurningPegPoint);
+                    for (int p = 0; p < w.Field.Pegs.Length; p++)
+                        if (Deflect(ref balls[i], w.Field.Pegs[p], w.Field.PegRadius, c))
+                            w.NotePeg(i, p);
                 }
             }
 

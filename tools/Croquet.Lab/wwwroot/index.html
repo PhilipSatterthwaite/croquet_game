@@ -112,18 +112,9 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
 </div>
 
 <div id="bonus">
-  <h2>Two bonus shots — the first may be taken four ways</h2>
+  <h2 id="bonusTitle">Two bonus shots</h2>
   <p id="bonusWho"></p>
-  <div class="ways">
-    <button data-way="malletHead"><b>Mallet head</b>
-      <span>A mallet head clear of it.</span></button>
-    <button data-way="footShot"><b>Foot shot</b>
-      <span>Touching, your ball held. Only they move.</span></button>
-    <button data-way="croquetShot"><b>Croquet shot</b>
-      <span>Touching. Both move.</span></button>
-    <button data-way="whereItLies"><b>Where it lies</b>
-      <span>Don't move. Just play on.</span></button>
-  </div>
+  <div class="ways" id="ways"></div>
   <div id="placeRow">
     <span id="placeHint"></span>
     <button id="placeOk">Place here</button>
@@ -160,8 +151,10 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
   </div>
   <div class="card">
     <h2>Game</h2>
-    <button class="act" id="new4">New game — 4 balls</button>
-    <button class="act" id="new6">New game — 6 balls</button>
+    <button class="act" id="new9w4">Nine wicket — 4 balls</button>
+    <button class="act" id="new9w6">Nine wicket — 6 balls</button>
+    <button class="act" id="new6w">Association — 6 hoops</button>
+    <p class="hint" id="variantNote" style="margin-top:9px"></p>
   </div>
 </div>
 </div>
@@ -312,7 +305,7 @@ function draw(positions) {
     for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(cx, cy + s * gap, wire * .9, 0, Math.PI * 2); ctx.fill(); }
   }
 
-  for (const peg of [FIELD.homePeg, FIELD.turningPeg]) {
+  for (const peg of FIELD.pegs) {
     const [cx, cy] = px(peg[0], peg[1]);
     ctx.fillStyle = '#F2E4C8';
     ctx.beginPath(); ctx.arc(cx, cy, Math.max(4, FIELD.pegRadius * scale * 2.2), 0, Math.PI * 2); ctx.fill();
@@ -610,7 +603,7 @@ function render() {
   if (owed) {
     document.getElementById('bonusWho').textContent =
       NAMES[s.striker] + ' roqueted ' + NAMES[s.roquetedBall] + '.';
-    document.querySelectorAll('.ways button').forEach(b =>
+    document.querySelectorAll('#ways button').forEach(b =>
       b.setAttribute('aria-pressed', String(bonus && bonus.way === b.dataset.way)));
   }
 
@@ -625,17 +618,39 @@ function render() {
   updateShot();
 }
 
-document.querySelectorAll('.ways button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const way = btn.dataset.way;
-    bonus = { way, place: null, placing: way !== 'whereItLies' };
-    if (way === 'whereItLies') bonus.place = { x: -1, y: 0 };
-    aim = null; pull = 0;
-    document.getElementById('placeHint').textContent =
-      'Drag around ' + NAMES[STATE.roquetedBall] + ' to choose where your ball sits.';
-    render();
+// The ways available depend on the variant: association croquet allows only
+// the croquet shot, the USCA rules all four. The server decides which.
+const WAY_TEXT = {
+  malletHead:  ['Mallet head', 'A mallet head clear of it.'],
+  footShot:    ['Foot shot', 'Touching, your ball held. Only they move.'],
+  croquetShot: ['Croquet shot', 'Touching. Both move.'],
+  whereItLies: ['Where it lies', "Don't move. Just play on."]
+};
+
+function buildWays() {
+  const ways = (FIELD && FIELD.bonusWays) || ['croquetShot'];
+  const box = document.getElementById('ways');
+  box.style.gridTemplateColumns = `repeat(${Math.min(4, ways.length)},1fr)`;
+  box.innerHTML = ways.map(w =>
+    `<button data-way="${w}"><b>${WAY_TEXT[w][0]}</b><span>${WAY_TEXT[w][1]}</span></button>`
+  ).join('');
+
+  document.getElementById('bonusTitle').textContent = ways.length > 1
+    ? 'Two bonus shots — the first may be taken ' + ways.length + ' ways'
+    : 'Two bonus shots — take croquet, then a continuation';
+
+  box.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const way = btn.dataset.way;
+      bonus = { way, place: null, placing: way !== 'whereItLies' };
+      if (way === 'whereItLies') bonus.place = { x: -1, y: 0 };
+      aim = null; pull = 0;
+      document.getElementById('placeHint').textContent =
+        'Drag around ' + NAMES[STATE.roquetedBall] + ' to choose where your ball sits.';
+      render();
+    });
   });
-});
+}
 document.getElementById('placeOk').addEventListener('click', () => {
   if (!bonus) return;
   if (!bonus.place) bonus.place = { x: -1, y: 0 };
@@ -672,22 +687,35 @@ zEl.addEventListener('input', () => setZoom(+zEl.value));
 document.getElementById('zin').addEventListener('click', () => setZoom(zoom + 0.5));
 document.getElementById('zout').addEventListener('click', () => setZoom(zoom - 0.5));
 
-async function newGame(n) {
+async function newGame(variant, n) {
   if (anim) return;
   bonus = null; aim = null; pull = 0; pan = { x: 0, y: 0 };
-  await j('/api/new', { balls: n });
+  await j('/api/new', { balls: n, variant });
   await pushFeel();
+  // The court changes with the variant, so the field has to come back too.
+  FIELD = await j('/api/field');
   STATE = await j('/api/state');
+  buildWays();
+  document.getElementById('variantNote').textContent = FIELD.variant === 'SixWicket'
+    ? 'Association croquet: 6 hoops run twice plus the peg, 13 points a ball. '
+      + 'Blue and black against red and yellow. One continuation however many '
+      + 'hoops a stroke runs, and your own ball off the court ends the turn.'
+    : 'USCA nine wicket: 14 wickets and two stakes, 16 points a ball. '
+      + 'Cutthroat, with carry-over deadness and no turn after sending a ball out.';
   render();
 }
-document.getElementById('new4').addEventListener('click', () => newGame(4));
-document.getElementById('new6').addEventListener('click', () => newGame(6));
+document.getElementById('new9w4').addEventListener('click', () => newGame('NineWicket', 4));
+document.getElementById('new9w6').addEventListener('click', () => newGame('NineWicket', 6));
+document.getElementById('new6w').addEventListener('click', () => newGame('SixWicket', 4));
 
 window.addEventListener('resize', layout);
 
 (async function boot() {
   FIELD = await j('/api/field');
   STATE = await j('/api/state');
+  buildWays();
+  document.getElementById('variantNote').textContent =
+    'USCA nine wicket: 14 wickets and two stakes, 16 points a ball.';
   layout();
   setZoom(3);
   render();

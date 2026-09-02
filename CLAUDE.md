@@ -80,6 +80,30 @@ the suite red. Assert things that hold for any feel — energy leaves the system
 balls never overlap, a shot replays identically — not "the ball stops at 12.4
 metres".
 
+## Two games
+
+| | Nine wicket | Association |
+|---|---|---|
+| Rulebook | `2020_Complete__9_Wicket__Rules.pdf` (USCA) | `Laws-7th-Edition-master-new.pdf` (WCF) |
+| Court | 100 × 50 ft | 28 × 35 yd, **laid out here rotated** so its long axis is x |
+| Hoops | 9, carrying 14 points | 6, each run twice = 12 points |
+| Pegs | 2 (turning, finishing) | 1 |
+| Points a ball | 16 | 13 |
+| Continuation for hoops | one each, max 2 | **exactly one**, however many run |
+| Hoop then a ball | contact ignored | **both count** |
+| Taking croquet | four ways | croquet shot only |
+| Out of bounds | option: any ball ends the turn | striker's own ball ends it |
+
+`Variant` picks between them; `Field.For(v)` and `Field.CourtFor(v)` build the
+court, and `Laws.For(v, options)` carries the differences. Everything else —
+physics, events, the turn machinery, aiming — is shared.
+
+**Not modelled in association play**: bisques, lifts and wiring, cannons,
+baulk-line choice (balls come on at one fixed spot), playing either ball of the
+side, and the yard-line subtleties of Laws 14–15 beyond replacing a ball a yard
+in. Law 21.2's qualification about where the other ball stood relative to the
+jaws is also skipped — any contact after a hoop counts as a roquet.
+
 ## The rules
 
 `2020_Complete__9_Wicket__Rules.pdf` in the repo root is the USCA official

@@ -584,7 +584,7 @@ namespace Croquet.Core.Tests
         {
             var g = NewGame(4, new[] { 0, 1, 0, 1 });
             ParkOthers(g, 0);
-            g.States[1].Point = Field.TotalPoints;
+            g.States[1].Point = g.World.Field.TotalPoints;
             g.World.Balls[1].InPlay = false;
 
             var h = g.World.Field.Hoops[0];
@@ -602,7 +602,7 @@ namespace Croquet.Core.Tests
             var g = NewGame(4, new[] { 0, 1, 0, 1 });
             ParkOthers(g, 0);
             var f = g.World.Field;
-            g.States[2].Point = Field.TotalPoints;
+            g.States[2].Point = g.World.Field.TotalPoints;
             g.World.Balls[2].InPlay = false;
 
             g.States[0].Point = Field.HomePegPoint;
@@ -647,7 +647,7 @@ namespace Croquet.Core.Tests
             var g = NewGame(1);
             var f = g.World.Field;
 
-            for (int p = 0; p < Field.TotalPoints; p++)
+            for (int p = 0; p < g.World.Field.TotalPoints; p++)
             {
                 Assert.Equal(p, g.States[0].Point);
 

@@ -68,8 +68,8 @@ namespace Croquet.Core
             Events.Add(ShotEvent.Cross(Step, ball, hoop, dir));
         }
 
-        internal void NotePeg(int ball, int pegPoint) =>
-            Events.Add(ShotEvent.Peg(Step, ball, pegPoint));
+        internal void NotePeg(int ball, int pegIndex) =>
+            Events.Add(ShotEvent.Peg(Step, ball, pegIndex));
 
         internal void NoteOut(int ball) => Events.Add(ShotEvent.Out(Step, ball));
 
@@ -106,13 +106,20 @@ namespace Croquet.Core
             return step;
         }
 
-        /// <summary>Did the ball touch a peg, and on which substep? -1 if not.</summary>
-        public int StepHitPeg(int ball, int pegPoint)
+        /// <summary>
+        /// Did the ball touch the peg that carries this course point, and on
+        /// which substep? -1 if not. Nine wicket has two pegs and association
+        /// croquet one, so the point has to be resolved to a peg first.
+        /// </summary>
+        public int StepHitPeg(int ball, int point)
         {
+            int peg = Field.PegIndexFor(point);
+            if (peg < 0) return -1;
+
             for (int i = 0; i < Events.Count; i++)
             {
                 var e = Events[i];
-                if (e.Kind == EventKind.PegContact && e.Ball == ball && e.Value == pegPoint)
+                if (e.Kind == EventKind.PegContact && e.Ball == ball && e.Value == peg)
                     return e.Step;
             }
             return -1;
