@@ -131,12 +131,12 @@ kbd{background:var(--s);border:1px solid var(--l);border-radius:4px;
 </div>
 
 <p class="hint">
-  <kbd>drag near the ball</kbd> to line up — the aim can only be taken from
-  inside the faint ring, so long shots have to be judged rather than clicked.
-  Then <kbd>drag the mallet back</kbd> and release to strike; further back is
-  harder. <kbd>scroll</kbd> to zoom, <kbd>right-drag</kbd> to look around.
-  The white chevron marks the striker; the dashed ring marks the hoop it is
-  playing for.
+  <kbd>drag near the ball</kbd> to line up — the aim is sighted from inside the
+  faint ring, which is a fixed 1.5 m of lawn, so <kbd>zoom in</kbd> for a finer
+  angle on a long shot. Then <kbd>drag the mallet back</kbd> and release to
+  strike; further back is harder. <kbd>scroll</kbd> to zoom,
+  <kbd>right-drag</kbd> to look around. The white chevron marks the striker;
+  the dashed ring marks the hoop it is playing for.
 </p>
 
 <div class="panel">
@@ -184,12 +184,23 @@ const MAX_PULL = 190;           // px of drag for full power
 const REST_GAP = 16;            // px the mallet head sits off the ball at rest
 const GRAB = 34;                // px around the mallet that starts a pull
 
-// How far from the ball the aim may be taken, in screen px. This is a skill
-// limit, not a convenience: aiming by clicking a ball on the far side of the
-// lawn would be a lever arm the length of the court, and perfectly accurate
-// at any range. Confining it to a short lever means the angle is only as fine
-// as the pixels near the ball, and long shots have to be judged.
-const AIM_RADIUS = 120;
+// How far from the ball the aim may be sighted, as a distance ON THE LAWN --
+// a patch of grass around the ball, not a number of pixels. Aiming by clicking
+// a ball across the court would be a lever arm the length of the court, and so
+// perfectly accurate at any range; a short lever leaves the angle only as fine
+// as the sighting allows, and long shots have to be judged.
+//
+// Being geometric rather than fixed on screen is what makes zoom worth using:
+// the same 1.5 m of lawn is a bigger arc when magnified, so zooming in buys
+// real precision instead of just a closer look.
+const AIM_REACH = 1.5;                     // metres
+
+// ...except that it may not shrink inside the mallet's own grab zone, or at
+// full zoom-out there would be no ring left to aim in and every click would
+// land on the mallet instead.
+const AIM_FLOOR_PX = 56;
+const aimRadius = () => Math.max(AIM_FLOOR_PX, AIM_REACH * scale);
+
 let pan = { x: 0, y: 0 };       // world-space camera nudge from right-dragging
 
 const cv = document.getElementById('court');
@@ -343,7 +354,7 @@ function draw(positions) {
   ctx.strokeStyle = 'rgba(255,255,255,.22)';
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 6]);
-  ctx.beginPath(); ctx.arc(ax, ay, AIM_RADIUS, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(ax, ay, aimRadius(), 0, Math.PI * 2); ctx.stroke();
   ctx.setLineDash([]);
 
   // The aim line says WHERE and only where; how hard is the mallet behind you.
@@ -492,7 +503,7 @@ function onMove(e) {
   if (mode === 'aim') {
     const reach = Math.hypot(dx, dy);
     if (reach < 4) return;                      // too close to mean a direction
-    if (reach > AIM_RADIUS) return;             // too far to be a fair sighting
+    if (reach > aimRadius()) return;            // too far to be a fair sighting
     aim = norm({ x: dx, y: dy });
     pull = 0;
   } else if (mode === 'pull') {
