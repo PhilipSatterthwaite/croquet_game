@@ -221,86 +221,14 @@ app.MapPost("/api/bot", () =>
     if (game.Winner != null) return Results.BadRequest("the game is over");
     if (!seats.ContainsKey(game.Striker)) return Results.BadRequest("not a bot's turn");
 
-    var bot = BotFor(game.Striker);
-    var move = bot.Choose(game);
-
-    // The shots it weighed up, as lines on the court, worked out BEFORE the
-    // stroke is played -- afterwards the balls have moved and the lines would
-    // start from nowhere. The front end plays through these so the machine is
-    // seen to think rather than simply teleporting its ball.
-    var sighting = Sightlines(bot.Considered, move);
-
+    var move = BotFor(game.Striker).Choose(game);
     // Returned straight through: PlayMove already produces an IResult, and
     // wrapping it again buries the whole response under a "value" field.
     return PlayMove(new PlayRequest(move.Aim.X, move.Aim.Y, move.Power,
                                     move.Way.ToString(),
                                     move.Placement.X, move.Placement.Y),
-                    move.Note, move.Score, sighting);
+                    move.Note, move.Score);
 });
-
-/// Turns candidate strokes into drawable lines: where the ball would be struck
-/// from, and how far down that line it would run. Distance comes from the same
-/// v^2 = 2*a*d the bot sizes its power with, so a gentle candidate draws a short
-/// line and a firm one draws a long one -- which is most of what makes the
-/// animation readable as deliberation.
-List<object> Sightlines(IReadOnlyList<BotMove> considered, BotMove chosen)
-{
-    var lines = new List<object>();
-    var drawn = new List<(Vec2 From, Vec2 To)>();
-
-    foreach (var m in considered.Concat(new[] { chosen }))
-    {
-        Vec2 from;
-        try
-        {
-            from = m.IsBonus && game.Stroke == StrokeKind.Bonus
-                 ? game.BonusPlacement(m.Way, m.Placement)
-                 : game.World.Balls[game.Striker].Pos;
-        }
-        catch (InvalidOperationException) { continue; }
-
-        double run = m.Power * m.Power / (2 * Math.Max(0.05, spec.Friction));
-        var dir = m.Aim.Normalized;
-
-        // Stop the line at the boundary. A firm stroke would roll well past the
-        // edge if nothing stopped it, and a sightline drawn out onto the grass
-        // beyond the court says the machine is aiming somewhere it is not: the
-        // ball would come off the cushion or be brought in long before there.
-        var to = from + dir * Math.Min(run, EdgeDistance(from, dir));
-
-        // Two candidates that differed only in being hit hard and harder both
-        // stop at the same wall, and drawing that line twice is a frame where
-        // nothing appears to happen. The chosen one is always drawn.
-        bool chosenOne = ReferenceEquals(m, chosen);
-        if (!chosenOne && drawn.Any(d => (d.From - from).Length < 0.05
-                                      && (d.To - to).Length < 0.20)) continue;
-        drawn.Add((from, to));
-
-        lines.Add(new
-        {
-            from = new { x = Math.Round(from.X, 3), y = Math.Round(from.Y, 3) },
-            to = new { x = Math.Round(to.X, 3), y = Math.Round(to.Y, 3) },
-            note = m.Note,
-            chosen = chosenOne
-        });
-    }
-    return lines;
-}
-
-/// How far a point can travel along a direction before it leaves the court.
-double EdgeDistance(Vec2 from, Vec2 dir)
-{
-    double best = double.MaxValue;
-    void Face(double pos, double d, double lo, double hi)
-    {
-        if (Math.Abs(d) < 1e-9) return;
-        double t = (d > 0 ? hi - pos : lo - pos) / d;
-        if (t >= 0) best = Math.Min(best, t);
-    }
-    Face(from.X, dir.X, 0, spec.Width);
-    Face(from.Y, dir.Y, 0, spec.Height);
-    return best == double.MaxValue ? 0 : best;
-}
 
 app.MapPost("/api/feel", (FeelRequest r) =>
 {
@@ -321,7 +249,7 @@ app.MapPost("/api/play", (PlayRequest r) =>
 
 // Shared by the human and the machine, so a bot stroke and a played one go
 // through exactly the same path and animate the same way.
-IResult PlayMove(PlayRequest r, string note, double score, object sighting = null)
+IResult PlayMove(PlayRequest r, string note, double score)
 {
     int striker = game.Striker;
     StrokeKind was = game.Stroke;
@@ -393,7 +321,10 @@ IResult PlayMove(PlayRequest r, string note, double score, object sighting = nul
         by = striker,
         note,
         score,
-        sighting,
+        // The aim and strength actually struck, so the front end can show the
+        // machine taking the shot with the same mallet a person uses.
+        aim = new { x = Math.Round(r.Dx, 5), y = Math.Round(r.Dy, 5) },
+        power = Math.Round(r.Power, 4),
         state = Snapshot()
     });
 

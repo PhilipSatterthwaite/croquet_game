@@ -462,9 +462,11 @@ function draw(positions) {
     ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.stroke();
   });
 
-  // The machine sighting a shot. Drawn under the aiming furniture and above
-  // everything else, because it is the only thing happening at that moment.
-  if (sight) drawSight();
+  // The machine aims with the human's furniture, unchanged: the same ring, the
+  // same dashed line, the same mallet drawn back the same distance. A second
+  // visual language for the identical act only made the opponent read as a
+  // different kind of thing from the player.
+  if (robot) { drawAiming(robot.from, robot.aim, robot.pull, r); return; }
 
   if (positions) return;   // mid-animation: no aiming furniture
 
@@ -478,7 +480,14 @@ function draw(positions) {
   }
 
   if (!from || STATE.winner) return;
-  const [ax, ay] = px(from.x, from.y);
+  drawAiming(from, aim, pull, r);
+}
+
+/// The ring, the line, the mallet and the striker's arrow. Takes its aim and
+/// pull as arguments rather than reading the globals, because the machine draws
+/// exactly this with values of its own.
+function drawAiming(fromPt, aimVec, pullPx, r) {
+  const [ax, ay] = px(fromPt.x, fromPt.y);
 
   // The ring the aim can be taken from. Drawn so the limit is visible rather
   // than felt as the aim mysteriously refusing to follow the pointer.
@@ -489,16 +498,16 @@ function draw(positions) {
   ctx.setLineDash([]);
 
   // The aim line says WHERE and only where; how hard is the mallet behind you.
-  if (aim) {
+  if (aimVec) {
     const len = Math.max(40, 1.6 * scale);
     ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.lineWidth = 2;
     ctx.setLineDash([7, 5]);
-    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax + aim.x * len, ay + aim.y * len);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax + aimVec.x * len, ay + aimVec.y * len);
     ctx.stroke(); ctx.setLineDash([]);
-    ctx.beginPath(); ctx.arc(ax + aim.x * len, ay + aim.y * len, 3.5, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(ax + aimVec.x * len, ay + aimVec.y * len, 3.5, 0, Math.PI * 2);
     ctx.fillStyle = '#fff'; ctx.fill();
 
-    drawMallet(ax, ay);
+    drawMallet(ax, ay, aimVec, pullPx);
   }
 
   const top = ay - r - 6, size = Math.max(5, Math.min(10, r * 0.9));
@@ -508,60 +517,20 @@ function draw(positions) {
   ctx.closePath(); ctx.fill();
 }
 
-/// The lines the machine is weighing up, and how far along each one has been
-/// drawn. Set by `think`, cleared the moment it strikes.
-let sight = null;
-
-/// Draws the shots under consideration: the rejected ones fading behind, the
-/// one currently being sighted extending from the ball like a player laying a
-/// mallet along the line. Nothing here is invented -- these are the candidates
-/// the search actually rated highest, in the order it rated them.
-function drawSight() {
-  const c = COLOURS[sight.by];
-
-  sight.past.forEach((l, k) => {
-    const age = sight.past.length - k;              // 1 is the most recent
-    const [x1, y1] = px(l.from.x, l.from.y);
-    const [x2, y2] = px(l.to.x, l.to.y);
-    ctx.strokeStyle = 'rgba(255,255,255,' + (0.22 / age).toFixed(3) + ')';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 5]);
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-    ctx.setLineDash([]);
-  });
-
-  const l = sight.line;
-  if (!l) return;
-  const [x1, y1] = px(l.from.x, l.from.y);
-  const [x2, y2] = px(l.to.x, l.to.y);
-  // Grows along the line rather than appearing whole, which is what reads as
-  // sighting rather than as a line switching on.
-  const t = Math.min(1, sight.grown);
-  const ex = x1 + (x2 - x1) * t, ey = y1 + (y2 - y1) * t;
-
-  ctx.strokeStyle = sight.settled ? 'rgba(255,255,255,.92)' : 'rgba(255,255,255,.5)';
-  ctx.lineWidth = sight.settled ? 2 : 1.5;
-  ctx.setLineDash(sight.settled ? [7, 5] : [5, 5]);
-  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(ex, ey); ctx.stroke();
-  ctx.setLineDash([]);
-
-  if (t >= 1) {
-    ctx.beginPath();
-    ctx.arc(ex, ey, sight.settled ? 4 : 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = sight.settled ? '#fff' : c;
-    ctx.fill();
-  }
-}
+/// The machine's aim, while it is taking it: where it strikes from, the line,
+/// and how far the mallet is drawn back. Null whenever a person is playing.
+let robot = null;
 
 /// Where the mallet head sits, in screen px, given the current pull.
-function malletAt(ax, ay) {
-  const d = REST_GAP + pull;
-  return [ax - aim.x * d, ay - aim.y * d];
+function malletAt(ax, ay, aimVec, pullPx) {
+  const d = REST_GAP + pullPx;
+  return [ax - aimVec.x * d, ay - aimVec.y * d];
 }
 
-function drawMallet(ax, ay) {
-  const [mx, my] = malletAt(ax, ay);
-  const ang = Math.atan2(aim.y, aim.x);
+function drawMallet(ax, ay, aimVec, pullPx) {
+  const [mx, my] = malletAt(ax, ay, aimVec, pullPx);
+  const ang = Math.atan2(aimVec.y, aimVec.x);
+  const pull = pullPx;
   const head = Math.max(16, Math.min(30, 0.34 * scale));
   const thick = Math.max(7, head * 0.42);
 
@@ -631,7 +600,7 @@ cv.addEventListener('pointerdown', e => {
   // round to point behind the ball.
   const s = screenOfStriker();
   if (aim && s) {
-    const [mx, my] = malletAt(s[0], s[1]);
+    const [mx, my] = malletAt(s[0], s[1], aim, pull);
     const r = cv.getBoundingClientRect();
     if (Math.hypot(e.clientX - r.left - mx, e.clientY - r.top - my) < GRAB) {
       mode = 'pull';
@@ -818,10 +787,10 @@ async function runBot() {
 
       bar.hidden = true;
 
-      // Sight the shot, then play it at ordinary speed. Slowing the stroke
-      // itself made the ball look wrong; the thing that was missing was the
-      // beat BEFORE it, which is where a player's time actually goes.
-      await think(res);
+      // Take the aim, then play the stroke at ordinary speed. Slowing the
+      // stroke itself made the ball look wrong; what was missing was the beat
+      // BEFORE it, which is where a player's time actually goes.
+      await aimLikeAPlayer(res);
       if (paused) return;
       await animate(res);
 
@@ -831,54 +800,75 @@ async function runBot() {
     }
   } finally {
     bar.hidden = true;
-    sight = null;
+    robot = null;
     botRunning = false;
   }
 }
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
-/// Plays through the shots the machine weighed up before it strikes. The lines
-/// come from the search itself, so this is a window onto the real decision
-/// rather than a loading animation dressed up as one.
-async function think(res) {
-  const lines = res.sighting;
-  if (!lines || !lines.length || !res.frames.length) { await wait(400); return; }
-
-  // Worst first, best last: the animation converges rather than wanders.
-  const order = lines.slice().reverse();
+/// The machine taking its aim, drawn exactly as a person's is: it lines the
+/// shot up, draws the mallet back, and strikes.
+///
+/// The two adjustments are the ones a player actually makes, and which one you
+/// see depends on the shot. A firm stroke is a question of LINE -- the mallet
+/// swings a little left and right while the direction is settled -- and a
+/// delicate one is a question of WEIGHT, so the mallet moves in and out instead
+/// while the strength is judged. Both fade out as it commits.
+async function aimLikeAPlayer(res) {
+  if (!res.frames.length || !res.aim) { await wait(400); return; }
 
   // Watch the ball about to play. Without this the camera would still be on
-  // whatever travelled furthest LAST stroke, and sight a shot off-screen.
+  // whatever travelled furthest LAST stroke, and aim at something off-screen.
   focusBall = res.by;
   const still = frameToPositions(res.frames[0]);
+  const from = { x: still[res.by][0], y: still[res.by][1] };
 
-  sight = { by: res.by, past: [], line: null, grown: 0, settled: false };
+  const base = Math.atan2(res.aim.y, res.aim.x);
+  const maxPower = +maxPowerEl.value || 6;
+  const finalPull = Math.max(8, Math.min(MAX_PULL, (res.power / maxPower) * MAX_PULL));
+  const hard = finalPull / MAX_PULL;              // 0 a feather, 1 a full blow
 
-  for (let k = 0; k < order.length; k++) {
-    if (paused) { sight = null; return; }
-    const last = k === order.length - 1;
+  // Hard shots waggle across the line; soft ones waggle along it.
+  const swing = 0.005 + 0.055 * hard;                       // radians
+  const weigh = finalPull * (0.05 + 0.45 * (1 - hard));     // px of pull
 
-    sight.line = order[k];
-    sight.settled = last;
-    sight.grown = 0;
+  robot = { from, aim: { x: res.aim.x, y: res.aim.y }, pull: 0 };
 
-    // The rejected ones are quick glances; the one it plays is looked at
-    // properly, which is the whole difference between hurried and considered.
-    const ms = last ? 420 : 150;
+  const run = async (ms, step) => {
     const start = performance.now();
-    while (sight.grown < 1) {
-      sight.grown = Math.min(1, (performance.now() - start) / ms);
+    for (;;) {
+      const t = Math.min(1, (performance.now() - start) / ms);
+      step(t);
       draw(still);
       await new Promise(requestAnimationFrame);
+      if (t >= 1) return;
     }
+  };
 
-    if (last) await wait(260);       // the pause on the line before striking
-    else sight.past.push(order[k]);
-    if (sight.past.length > 3) sight.past.shift();
-  }
+  const setAngle = a => { robot.aim = { x: Math.cos(a), y: Math.sin(a) }; };
 
-  sight = null;
+  // Lining up: the aim converges onto the line, mallet at rest.
+  await run(420, t => setAngle(base + swing * 2.2 * Math.sin(t * 7) * (1 - t)));
+  if (paused) { robot = null; return; }
+
+  // Addressing the ball: draw back to the strength it wants, waggling.
+  await run(620, t => {
+    const ease = t * t * (3 - 2 * t);
+    const fade = 1 - t * t;
+    setAngle(base + swing * Math.sin(t * 13) * fade);
+    robot.pull = Math.max(0, Math.min(MAX_PULL,
+      finalPull * ease + weigh * Math.sin(t * 11) * fade));
+  });
+  if (paused) { robot = null; return; }
+
+  // Committed: still on the line, then it goes.
+  setAngle(base);
+  robot.pull = finalPull;
+  draw(still);
+  await wait(200);
+
+  robot = null;
 }
 
 const frameToPositions = f => {

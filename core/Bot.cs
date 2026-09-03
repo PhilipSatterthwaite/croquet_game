@@ -57,6 +57,12 @@ namespace Croquet.Core
         /// <summary>Best candidates taken a stroke deeper, when looking ahead.</summary>
         public int Deepen = 3;
 
+        /// <summary>Leading candidates re-priced by what this hand would do to them.</summary>
+        public int RiskChecks = 10;
+
+        /// <summary>Wobbled replays per candidate in that re-pricing.</summary>
+        public int RiskSamples = 4;
+
         /// <summary>
         /// Aim wobble applied to the chosen stroke, in radians, one standard
         /// deviation. THIS is what makes a weaker opponent, rather than a
@@ -73,9 +79,8 @@ namespace Croquet.Core
         /// How much the aim error grows with the length of the shot. A player's
         /// hand is about as steady whatever the range, but the same angular
         /// slip costs far more at twenty metres than at two -- and a real player
-        /// is also less certain of the line over distance. Error is scaled by
-        /// 0.6 + range/12, so a two-metre tap is near enough exact and a shot
-        /// across the court is genuinely uncertain.
+        /// is also less certain of the line over distance. See Spread for the
+        /// shape of it: near enough nothing at a tap, and growing from there.
         /// </summary>
         public double RangeError = 1.0;
 
@@ -87,21 +92,21 @@ namespace Croquet.Core
         // every level score nothing at all.
         //
         /// <summary>Barely a player. Misses often, and badly at any range.</summary>
-        public static Bot Beginner() => new Bot
+        public static Bot Beginner(int seed = DefaultSeed) => new Bot(seed)
         {
             SweepAngles = 10, PlacementAngles = 4,
             AimError = 0.038, PowerError = 0.26, RangeError = 1.4
         };
 
         /// <summary>Knows what to do, is not much good at doing it.</summary>
-        public static Bot Casual() => new Bot
+        public static Bot Casual(int seed = DefaultSeed) => new Bot(seed)
         {
             SweepAngles = 18, PlacementAngles = 6,
             AimError = 0.014, PowerError = 0.11, RangeError = 1.2
         };
 
         /// <summary>A sound club player.</summary>
-        public static Bot Steady() => new Bot
+        public static Bot Steady(int seed = DefaultSeed) => new Bot(seed)
         {
             SweepAngles = 30, PlacementAngles = 8,
             AimError = 0.006, PowerError = 0.045, RangeError = 1.0
@@ -112,7 +117,7 @@ namespace Croquet.Core
         /// and its hand is very good, but it is still a hand. Long shots are
         /// still missed occasionally, which is what makes it beatable at all.
         /// </summary>
-        public static Bot Expert() => new Bot
+        public static Bot Expert(int seed = DefaultSeed) => new Bot(seed)
         {
             Lookahead = 1, SweepAngles = 48, PlacementAngles = 12, Deepen = 4,
             AimError = 0.0035, PowerError = 0.02, RangeError = 0.8
@@ -121,31 +126,30 @@ namespace Croquet.Core
         /// <summary>Strokes simulated by the current or last Choose.</summary>
         public volatile int LastSearched;
 
-        /// <summary>
-        /// The strokes the last search rated highest, best first, and the one it
-        /// settled on last of all. Nothing reads this to play -- it is here so a
-        /// front end can show the opponent sighting a few shots before striking.
-        /// A player does not move the instant it is their turn, and an opponent
-        /// that does reads as a machine however well it plays. These are the
-        /// real candidates, so what is shown is what it actually weighed up.
-        /// </summary>
-        public readonly List<BotMove> Considered = new List<BotMove>();
-
-        /// <summary>How many near-distinct candidates to keep for showing.</summary>
-        public int Sightings = 5;
-
         /// <summary>Roughly how many it expects to simulate, for a progress bar.</summary>
         public volatile int Planned;
 
         readonly Random rng;
 
-        public Bot(int seed = 20260902) { rng = new Random(seed); }
+        /// <summary>The hand a level gets unless one is asked for by name.</summary>
+        public const int DefaultSeed = 20260902;
 
-        /// <summary>Normal deviate, for the wobble. Never used inside the simulation.</summary>
+        public Bot(int seed = DefaultSeed) { rng = new Random(seed); }
+
+        /// <summary>
+        /// Normal deviate, for the wobble. Never used inside the simulation.
+        ///
+        /// Clamped at two and a half deviations. An unclamped normal has a tail,
+        /// and the tail of a MULTIPLICATIVE power error crosses zero: a beginner
+        /// meaning to hit seven metres would occasionally strike at three per
+        /// cent of that and dribble the ball two centimetres. Nobody does that.
+        /// A bad player hits a shot too softly, not almost not at all.
+        /// </summary>
         double Gauss()
         {
             double u1 = 1.0 - rng.NextDouble(), u2 = rng.NextDouble();
-            return Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
+            double g = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
+            return g < -2.5 ? -2.5 : g > 2.5 ? 2.5 : g;
         }
 
         // ---- choosing -----------------------------------------------------
@@ -159,7 +163,7 @@ namespace Croquet.Core
         /// </summary>
         public bool Simple;
 
-        public static Bot Dummy() => new Bot { Simple = true };
+        public static Bot Dummy(int seed = DefaultSeed) => new Bot(seed) { Simple = true };
 
         BotMove SimpleMove(Game game)
         {
@@ -200,20 +204,50 @@ namespace Croquet.Core
             // The wobble goes on the chosen stroke, not on the search: it knows
             // what it meant to do and simply fails to do it, which is what
             // being beatable looks like.
-            if (m != null && (AimError > 0 || PowerError > 0))
+            if (m != null && Shaky)
             {
-                // How far the stroke is meant to send the ball, from v^2 = 2ad.
-                // Range is what the error scales with, so a tap is reliable and
-                // a shot the length of the court is a genuine gamble.
-                double range = m.Power * m.Power / (2 * Math.Max(0.05, game.World.Spec.Friction));
-                double spread = 0.6 + range / 12.0 * RangeError;
-
-                double a = Math.Atan2(m.Aim.Y, m.Aim.X) + Gauss() * AimError * spread;
-                m.Aim = new Vec2(Math.Cos(a), Math.Sin(a));
-                m.Power = Math.Max(0.15, m.Power * (1 + Gauss() * PowerError * spread));
+                Wobble(m, game.World.Spec);
                 m.Note += " (roughly)";
             }
             return m;
+        }
+
+        /// <summary>Does this level miss at all? A perfect bot skips the wobble.</summary>
+        bool Shaky => AimError > 0 || PowerError > 0;
+
+        /// <summary>
+        /// How far off a stroke of this strength is likely to go, as a multiple
+        /// of the level's base error.
+        ///
+        /// This is what makes weakness read as human. Error grows with the
+        /// RANGE of the shot, because that is where a person's uncertainty
+        /// actually lives: nobody misjudges a tap, and everybody misjudges a
+        /// shot across the court. It used to carry a floor of 0.6, which meant
+        /// even a half-metre push into a hoop was struck with most of a
+        /// beginner's full error and missed -- a shot that no player of any
+        /// standard gets wrong. The floor is now small enough that anything
+        /// within comfortable range goes in whoever is playing, and the levels
+        /// separate on the long shots, which is where they separate in life.
+        /// </summary>
+        double Spread(double power, CourtSpec c)
+        {
+            double range = power * power / (2 * Math.Max(0.05, c.Friction));
+            return 0.12 + range / 10.0 * RangeError;
+        }
+
+        /// <summary>Puts the hand's error on a stroke, in place.</summary>
+        void Wobble(BotMove m, CourtSpec c)
+        {
+            double spread = Spread(m.Power, c);
+
+            double a = Math.Atan2(m.Aim.Y, m.Aim.X) + Gauss() * AimError * spread;
+            m.Aim = new Vec2(Math.Cos(a), Math.Sin(a));
+
+            // Floored at two thirds. The error is multiplicative, so without a
+            // floor a large enough slip turns a firm stroke into a nudge, which
+            // is a different mistake from the one being modelled.
+            double f = 1 + Gauss() * PowerError * spread;
+            m.Power *= f < 0.66 ? 0.66 : f > 1.5 ? 1.5 : f;
         }
 
         /// <summary>Chooses and plays one stroke on the real game.</summary>
@@ -250,41 +284,7 @@ namespace Croquet.Core
         {
             LastSearched = 0;
             Planned = 0;
-            Considered.Clear();
             return SearchInner(game, depth, out best);
-        }
-
-        /// <summary>
-        /// Keeps the best few candidates that are visibly different from one
-        /// another. The raw top of the list is a dozen versions of the same
-        /// shot at slightly different strengths, which as an animation would
-        /// look like a stuck frame rather than a player weighing up options.
-        /// </summary>
-        void RecordSightings(List<(BotMove Move, double Score, Game After)> scored)
-        {
-            var ranked = new List<(BotMove Move, double Score, Game After)>(scored);
-            ranked.Sort((a, b) => b.Score.CompareTo(a.Score));
-
-            foreach (var (m, s, _) in ranked)
-            {
-                if (Considered.Count >= Sightings) break;
-
-                bool near = false;
-                foreach (var k in Considered)
-                {
-                    // Same line and much the same strength: not a second idea.
-                    double dot = k.Aim.X * m.Aim.X + k.Aim.Y * m.Aim.Y;
-                    if (dot > 0.985 && Math.Abs(k.Power - m.Power) < m.Power * 0.35)
-                    { near = true; break; }
-                }
-                if (near) continue;
-
-                Considered.Add(new BotMove
-                {
-                    IsBonus = m.IsBonus, Way = m.Way, Placement = m.Placement,
-                    Aim = m.Aim, Power = m.Power, Score = s, Note = m.Note
-                });
-            }
         }
 
         BotMove SearchInner(Game game, int depth, out double best)
@@ -332,6 +332,55 @@ namespace Croquet.Core
 
             scored.Sort((a, b) => b.Score.CompareTo(a.Score));
 
+            // Re-price the leaders by what they are worth to THIS hand. Up to
+            // here every candidate has been played perfectly, so a roquet from
+            // thirty metres always goes in and always outscores a quiet
+            // positioning shot -- and then the wobble is applied on the way out
+            // and it misses. That is exactly the player who is infuriating to
+            // watch: forever attempting things they cannot do. Replaying the
+            // leaders a few times with the error actually on them turns the
+            // score into the average outcome rather than the best case, and a
+            // shot that only works when struck perfectly collapses on its own.
+            if (Shaky && depth == Lookahead)
+            {
+                // The shortlist has to hold different IDEAS, not the same idea
+                // at a dozen strengths. Straight off the top, the leaders are
+                // all one shot with the power nudged, so re-pricing them merely
+                // discovers which version of that one shot is least bad -- and
+                // the quiet positioning shot that should have won was never in
+                // the running. Skipping near-duplicates buys real alternatives
+                // for the same number of simulations.
+                var pool = new List<(BotMove Move, double Score, Game After)>();
+                foreach (var e in scored)
+                {
+                    if (pool.Count >= RiskChecks) break;
+                    bool same = false;
+                    foreach (var k in pool)
+                    {
+                        double dot = k.Move.Aim.X * e.Move.Aim.X + k.Move.Aim.Y * e.Move.Aim.Y;
+                        if (k.Move.IsBonus == e.Move.IsBonus && dot > 0.99
+                            && Math.Abs(k.Move.Power - e.Move.Power) < e.Move.Power * 0.25)
+                        { same = true; break; }
+                    }
+                    if (!same) pool.Add(e);
+                }
+
+                for (int i = 0; i < pool.Count; i++)
+                {
+                    var (m, clean, after) = pool[i];
+                    pool[i] = (m, Expected(game, m, me, clean), after);
+                }
+
+                // Only the re-priced ones may now be chosen. A best-case score
+                // and an expected score are not the same quantity, and sorting
+                // them together simply hands the choice to whichever heave was
+                // ranked eleventh and never got examined. Everything dropped
+                // here was worse than these even when played perfectly, so it
+                // cannot be the answer once the hand is taken into account.
+                scored = pool;
+                scored.Sort((a, b) => b.Score.CompareTo(a.Score));
+            }
+
             int deepen = depth > 0 ? Math.Min(Deepen, scored.Count) : 0;
             for (int i = 0; i < deepen; i++)
             {
@@ -344,15 +393,46 @@ namespace Croquet.Core
                 scored[i] = (m, s + follow * 0.75, after);
             }
 
-            // Only the outermost call: the deeper ones are answering "and then
-            // what", which is not a shot being considered now.
-            if (depth == Lookahead) RecordSightings(scored);
-
             foreach (var (m, s, _) in scored)
                 if (s > best) { best = s; chosen = m; }
 
             chosen.Score = best;
             return chosen;
+        }
+
+        /// <summary>
+        /// What a stroke is actually worth to a player with this hand: the mean
+        /// of playing it several times with the error on, plus the clean score
+        /// as one more sample so a shot with real upside is not written off for
+        /// being difficult. A gentle stroke barely moves under the wobble and
+        /// keeps its score; a heave across the court is mostly misses and loses
+        /// most of it. Nothing here is a rule about long shots -- the search
+        /// simply stops being told it is a better player than it is.
+        /// </summary>
+        double Expected(Game game, BotMove m, int me, double clean)
+        {
+            double total = clean;
+            int n = 1;
+
+            for (int k = 0; k < RiskSamples; k++)
+            {
+                var trial = new BotMove
+                {
+                    IsBonus = m.IsBonus, Way = m.Way, Placement = m.Placement,
+                    Aim = m.Aim, Power = m.Power
+                };
+                Wobble(trial, game.World.Spec);
+
+                var clone = game.Clone();
+                StrokeResult r;
+                try { r = Apply(clone, trial); }
+                catch (InvalidOperationException) { continue; }
+                LastSearched++;
+
+                total += Evaluate(game, clone, r, me);
+                n++;
+            }
+            return total / n;
         }
 
         static BotMove Fallback(Game game)
@@ -382,7 +462,13 @@ namespace Croquet.Core
         static double SpeedFor(double distance, CourtSpec c) =>
             Math.Sqrt(2 * c.Friction * Math.Max(0.05, distance));
 
-        static readonly double[] Overhit = { 0.8, 1.0, 1.2, 1.6, 2.2 };
+        // Multipliers on SPEED, so the distance rolled goes as the SQUARE of
+        // these. The old ladder topped out at 2.2, which is not a firm stroke
+        // at a ball five metres away -- it is a stroke that rolls twenty-four
+        // metres and finishes against the far boundary. Capped at 1.4, which
+        // still passes comfortably through a target and runs a hoop with
+        // something to spare.
+        static readonly double[] Overhit = { 0.85, 1.0, 1.15, 1.4 };
 
         IEnumerable<BotMove> OrdinaryCandidates(Game game)
         {
@@ -493,7 +579,11 @@ namespace Croquet.Core
                         double dist = d.Length;
                         if (dist < 1e-6) return;
                         var aim = d / dist;
-                        foreach (var f in new[] { 0.8, 1.15, 1.7 })
+                        // As with Overhit: squared into distance, so 1.7 was a
+                        // stroke rolling three times as far as it was aimed --
+                        // and "through it" already aims past the other ball, so
+                        // that compounded into strokes crossing the whole court.
+                        foreach (var f in new[] { 0.85, 1.1, 1.4 })
                             list.Add(new BotMove
                             {
                                 IsBonus = true, Way = way, Placement = place,
@@ -604,6 +694,14 @@ namespace Croquet.Core
                 var target = field.TargetFor(pp);
                 double closer = (target - before.World.Balls[j].Pos).Length
                               - (target - after.World.Balls[j].Pos).Length;
+
+                // Clamped, because the value of shoving a ball is not linear in
+                // how far it goes. Unclamped, driving one opponent twenty
+                // metres from its hoop was worth more than running a hoop --
+                // and in cutthroat every other ball is an opponent, so the
+                // whole game became blasting whatever was nearest as hard as
+                // possible. Three metres is about where it stops mattering.
+                closer = closer > 3.0 ? 3.0 : closer < -3.0 ? -3.0 : closer;
 
                 if (SameSide(after, me, j))
                 {
