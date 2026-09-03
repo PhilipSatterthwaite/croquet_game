@@ -1,0 +1,18 @@
+<Project>
+
+  <!--
+    Build output goes to build/ at the repo root rather than bin/ and obj/ beside
+    the sources.
+
+    This is not tidiness. Unity consumes core/ as a local package and compiles
+    every .cs file it finds underneath it, and obj/ holds GENERATED .cs files -
+    AssemblyInfo and the like. Left in place, Unity would compile those too and
+    fail on duplicate assembly attributes. Redirecting the output keeps core/ as
+    pure source, which is the only thing Unity should ever see there.
+  -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)build\obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)build\bin\$(MSBuildProjectName)\</BaseOutputPath>
+  </PropertyGroup>
+
+</Project>

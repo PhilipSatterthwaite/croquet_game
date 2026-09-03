@@ -1,0 +1,7 @@
+{
+  "name": "com.philipsatterthwaite.croquet.core",
+  "version": "0.1.0",
+  "displayName": "Croquet Core",
+  "description": "The game itself: deterministic simulation, both rulebooks, and the opponent. Engine-free on purpose, so the same sources run under Unity and under dotnet test with no translation between them.",
+  "unity": "6000.0"
+}

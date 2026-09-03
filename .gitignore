@@ -1,8 +1,12 @@
-# .NET
+# .NET — output is redirected here by Directory.Build.props so that core/ stays
+# pure source for Unity to compile. bin/ and obj/ are kept in case a stray build
+# lands one beside a project.
+build/
 bin/
 obj/
 *.user
 *.suo
+*.slnx
 .vs/
 
 # Unity — everything regenerated from Assets/ and ProjectSettings/
@@ -17,6 +21,8 @@ unity/[Mm]emoryCaptures/
 unity/[Rr]ecordings/
 unity/*.csproj
 unity/*.sln
+unity/*.slnx
+unity/.vscode/
 unity/Assets/AssetStoreTools*
 
 # Unity meta files must be committed -- they carry asset GUIDs, and losing them
