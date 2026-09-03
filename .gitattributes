@@ -1,0 +1,11 @@
+# Attribute macros used by unity/.gitattributes.
+#
+# Git only honours [attr] macro definitions in the TOP-LEVEL .gitattributes.
+# The Unity template ships them in its own file, which was fine when the Unity
+# project was its own repository and became an error the moment it moved in
+# here -- git warned "not allowed" on every command. They live at the root now,
+# so the rules in unity/.gitattributes that reference them work as intended.
+
+[attr]lfs               filter=lfs diff=lfs merge=lfs -text
+[attr]unity-json        eol=lf linguist-language=json
+[attr]unity-yaml        merge=unityyamlmerge eol=lf linguist-language=yaml
