@@ -164,15 +164,50 @@ sweep. Blind sampling spends almost all its budget on angles that hit nothing.
 Power is sampled as a **distance to roll** and converted with `v² = 2ad`, so
 "reach that ball" is expressible directly.
 
-`Bot.Fast()` / `new Bot()` / `Bot.Strong()`. Normal is about 190 strokes
-searched in ~110 ms. `Lookahead` costs several times the budget per ply and is
-off by default — the evaluator already rewards the position a stroke leaves, so
-one ply plays a recognisable break.
+`Lookahead` costs several times the budget per ply and is off below Expert —
+the evaluator already rewards the position a stroke leaves, so one ply plays a
+recognisable break. A stroke is chosen in roughly 100 ms.
 
-**It is currently very strong** — it has taken a ball all the way round in a
-single turn. Making it beatable is a separate job from making it good; the
-obvious lever is aim error scaled by a difficulty setting, which does not exist
-yet.
+### Difficulty is a hand, not a smaller search
+
+`Bot.Beginner()` / `Casual()` / `Steady()` / `Expert()`, each taking an optional
+seed (they are deterministic, so a test wanting several independent attempts
+must vary it). A weaker level is **not** one that searches less: a bot that
+searches less still picks a sensible shot and plays it perfectly, which reads as
+an unbeatable player with poor ideas. Weakness is `AimError` and `PowerError` —
+its hand shakes, so it misses, like a person.
+
+`Spread` sets how far off a stroke goes as a multiple of that base error, and
+grows with the **range** of the shot. That is where a person's uncertainty
+actually lives: nobody misjudges a tap and everybody misjudges a shot across the
+court. It matters that the floor is small (0.12), so anything within comfortable
+range goes in whoever is playing and the levels separate on the long shots.
+`Gauss` is clamped at 2.5σ and the power multiplier floored at ⅔, because the
+error is multiplicative and an unclamped tail crosses zero — that produced a bot
+striking at three per cent of its intended power and dribbling the ball.
+
+### The search knows whose hand it is
+
+Every candidate is first played **perfectly**, which makes a thirty-metre roquet
+look certain and better than any quiet positioning shot. So the leaders are then
+re-priced by `Expected`: replayed a few times with the error actually on them,
+scoring the average outcome rather than the best case. A shot that only works
+when struck perfectly collapses on its own, with no rule anywhere about long
+shots being bad.
+
+Two things make that bite, and both were bugs when absent:
+
+- The re-priced candidates are the **only** ones that may then be chosen. A
+  best-case score and an expected score are different quantities; sorting them
+  together just hands the choice to whichever heave was ranked eleventh.
+- The shortlist skips **near-duplicates**. Straight off the top the leaders are
+  one shot at a dozen strengths, so re-pricing them only finds the least-bad
+  version of that shot and the alternative never competes.
+
+Measured, strokes to get a ball round three times: beginner 90, casual 81,
+steady 54, expert 39. `BotQualityTests` guards the behaviours a person actually
+notices — that it does not dribble the ball, does not heave it across the court,
+and that every level runs a hoop it is sitting in front of.
 
 ## Current state
 
@@ -181,9 +216,21 @@ layout, running hoops in the right direction, the turn and bonus-shot machinery
 above, all four bonus ways, deadness, out-of-bounds replacement, points scored
 for balls driven by others, staking out, sides and winning.
 
-Not built yet: the Unity project, AI, shot preview, rovers and poison,
-"wicketed" balls, and the rule that a ball resting within a mallet length of
-the boundary is brought in.
+Also done: both rulebooks, the four difficulty levels above, and the lab front
+end — aiming by pulling a mallet back, the four ways to take croquet with a
+placement step, pause between strokes, and seats that decide which balls the
+machine plays.
+
+The machine takes its aim with **the same furniture a person uses** — the same
+ring, dashed line and mallet, drawn back the same distance — with a small waggle
+across the line for firm strokes and in and out for delicate ones. An earlier
+version showed it sighting several candidate lines instead; it was dropped
+because a second visual language for the identical act made the opponent read as
+a different kind of thing from the player.
+
+Not built yet: the Unity project, shot preview, rovers and poison, "wicketed"
+balls, and the rule that a ball resting within a mallet length of the boundary
+is brought in.
 
 The scorekeeper app at `../Croquet Score App/index.html` was the original spec
 for the course; `Course.Labels` here mirrors its `COURSE`.
