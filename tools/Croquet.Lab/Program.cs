@@ -82,9 +82,6 @@ app.UseStaticFiles();
 // glance rather than something to be deduced.
 var started = DateTime.Now;
 
-const double FrameDt = 1.0 / 60.0;   // playback rate; browser speed is separate
-const int MaxFrames = 3600;
-
 var variant = Variant.NineWicket;
 var spec = Field.CourtFor(variant);
 Game game = NewGame(variant, 6, 0, spec);
@@ -104,7 +101,6 @@ var bots = new Dictionary<string, Bot>
     ["dummy"] = Bot.Dummy(),          // no search at all; a diagnostic
     ["beginner"] = Bot.Beginner(),
     ["casual"] = Bot.Casual(),
-    ["steady"] = Bot.Steady(),
     ["expert"] = Bot.Expert()
 };
 Bot BotFor(int ball) =>
@@ -251,62 +247,45 @@ app.MapPost("/api/play", (PlayRequest r) =>
 // through exactly the same path and animate the same way.
 IResult PlayMove(PlayRequest r, string note, double score)
 {
-    int striker = game.Striker;
     StrokeKind was = game.Stroke;
 
-    // Where every ball stands as the stroke begins, and which one is about to
-    // be set moving. A bonus stroke moves the striker to its placement first,
-    // and a foot shot drives the OTHER ball while the striker is held.
-    var before = game.World.Balls.Select(b => b.Pos).ToArray();
-    var wasInPlay = game.World.Balls.Select(b => b.InPlay).ToArray();
-    int moved = striker;
-
-    StrokeResult result;
+    // Playing the stroke and rebuilding it as frames is Replay's job, in core,
+    // so the lab and Unity animate from the same code rather than from two
+    // copies of it that quietly disagree.
+    Replay shot;
     if (was == StrokeKind.Bonus)
     {
         if (!Enum.TryParse<BonusWay>(r.Way, true, out var way))
             return Results.BadRequest(
                 "a bonus stroke needs a way: malletHead, footShot, croquetShot or whereItLies");
 
-        var place = new Vec2(r.PlaceX, r.PlaceY);
-        before[striker] = game.BonusPlacement(way, place);
-        if (way == BonusWay.FootShot) moved = game.RoquetedBall;
-
-        result = game.PlayBonus(way, place, new Vec2(r.Dx, r.Dy), r.Power);
+        shot = Replay.PlayBonus(game, way, new Vec2(r.PlaceX, r.PlaceY),
+                                new Vec2(r.Dx, r.Dy), r.Power);
     }
     else
     {
-        result = game.Play(new Vec2(r.Dx, r.Dy), r.Power);
+        shot = Replay.Play(game, new Vec2(r.Dx, r.Dy), r.Power);
     }
 
-    // Replay the settled shot frame by frame for the animation. The rules have
-    // already been applied to the world, so the frames are rebuilt from the
-    // same starting state and the same input -- which lands in exactly the same
-    // place, because the sim is deterministic. That equality is asserted in
-    // SimTests.Replay_survives_being_split_across_frames.
-    var scratch = new Ball[before.Length];
-    for (int i = 0; i < before.Length; i++)
+    int striker = shot.Striker;
+    var result = shot.Result;
+
+    // Flattened to [x, y, x, y, ...] per frame, which is what the page reads.
+    var frames = shot.Frames.Select(f =>
     {
-        scratch[i] = new Ball(before[i]);
-        scratch[i].InPlay = wasInPlay[i];
-    }
-
-    var scratchWorld = new World(scratch, game.World.Field, spec);
-    scratchWorld.ClearShot();
-    scratch[moved].Vel = new Vec2(r.Dx, r.Dy).Normalized * r.Power;
-
-    var frames = new List<double[]>(256) { Snap(scratch) };
-    int steps = 0;
-    while (steps < MaxFrames && Sim.Step(scratchWorld, FrameDt))
-    {
-        steps++;
-        frames.Add(Snap(scratch));
-    }
+        var a = new double[f.Length * 2];
+        for (int i = 0; i < f.Length; i++)
+        {
+            a[i * 2] = Math.Round(f[i].X, 4);
+            a[i * 2 + 1] = Math.Round(f[i].Y, 4);
+        }
+        return a;
+    }).ToArray();
 
     return Results.Ok(new
     {
         frames,
-        seconds = steps * FrameDt,
+        seconds = shot.Seconds,
         stroke = was.ToString(),
         scored = result.PointsScored.Select(p => game.World.Field.Labels[p]),
         othersScored = result.OthersScored.Select(
@@ -327,17 +306,6 @@ IResult PlayMove(PlayRequest r, string note, double score)
         power = Math.Round(r.Power, 4),
         state = Snapshot()
     });
-
-    static double[] Snap(Ball[] b)
-    {
-        var f = new double[b.Length * 2];
-        for (int i = 0; i < b.Length; i++)
-        {
-            f[i * 2] = Math.Round(b[i].Pos.X, 4);
-            f[i * 2 + 1] = Math.Round(b[i].Pos.Y, 4);
-        }
-        return f;
-    }
 }
 
 const string url = "http://localhost:5055";

@@ -51,11 +51,38 @@ namespace Croquet.Core
         /// <summary>Angles in the fallback sweep. Raise for a stronger, slower bot.</summary>
         public int SweepAngles = 36;
 
+        /// <summary>
+        /// Set while searching a stroke that has already been won -- the croquet
+        /// stroke after a roquet, and the continuation after that.
+        ///
+        /// Those plies exist to answer one question, "what is this roquet
+        /// worth", and a coarse answer to it is worth far more than a fine one
+        /// costing four times as much. The stroke actually played is always
+        /// chosen at full resolution; only the estimate of what it leads to is
+        /// cheap.
+        /// </summary>
+        bool coarse;
+
+        int Sweeps => coarse ? Math.Min(8, SweepAngles) : SweepAngles;
+        int Places => coarse ? Math.Min(3, PlacementAngles) : PlacementAngles;
+
         /// <summary>Candidate placements tried around the roqueted ball.</summary>
         public int PlacementAngles = 8;
 
         /// <summary>Best candidates taken a stroke deeper, when looking ahead.</summary>
         public int Deepen = 3;
+
+        /// <summary>
+        /// How far into strokes it has ALREADY WON the bot can see: the croquet
+        /// stroke after a roquet, and the continuation after that.
+        ///
+        /// Two is seeing the whole of what a roquet buys. Zero is a player who
+        /// hits a ball because hitting balls is good, without any picture of
+        /// what the two strokes are for -- which is not a shaky hand but a
+        /// genuinely poorer player, and is what makes the beginner a beginner
+        /// rather than merely an unlucky expert.
+        /// </summary>
+        public int FreePlies = 2;
 
         /// <summary>Leading candidates re-priced by what this hand would do to them.</summary>
         public int RiskChecks = 10;
@@ -84,44 +111,74 @@ namespace Croquet.Core
         /// </summary>
         public double RangeError = 1.0;
 
-        // A regulation hoop leaves under four centimetres either side of the
-        // ball, so running one from a metre away needs the line inside about
-        // 0.04 radians. These are set against that: beginner is well outside it
-        // and scores by luck, expert is comfortably inside it and still misses
-        // across the court. Values sized for the old double-width hoops made
-        // every level score nothing at all.
+        // THREE levels, and the ruler they are set against is the hoop: a
+        // regulation one leaves under four centimetres either side of the ball,
+        // so running it from a metre away needs the line inside about 0.04
+        // radians. Beginner is well outside that at any distance and scores by
+        // luck; expert is inside it at close range and outside it across the
+        // court, which is where a good player's misses actually are.
+        //
+        // There were four -- beginner, casual, steady, expert -- and they were
+        // all too accurate. Three now, each a clearly worse hand than the level
+        // it replaced. BotLadderTests measures what that buys, in the only way
+        // that isolates it: the wobble applied to an already-aimed stroke, with
+        // the search taken out of the answer.
         //
         /// <summary>Barely a player. Misses often, and badly at any range.</summary>
         public static Bot Beginner(int seed = DefaultSeed) => new Bot(seed)
         {
-            SweepAngles = 10, PlacementAngles = 4,
-            AimError = 0.038, PowerError = 0.26, RangeError = 1.4
+            // Weak in the HEAD rather than only in the hand. It cannot see what
+            // a roquet is for and it barely checks whether a shot is one it can
+            // play, so it attempts things beyond it -- which is what a beginner
+            // does, and is a different failing from missing an easy one.
+            FreePlies = 0, RiskChecks = 4,
+            SweepAngles = 12, PlacementAngles = 4,
+
+            // The hand close in is much steadier than it was. Anything inside
+            // the range a shot is actually sighted over goes in for everybody;
+            // difficulty lives on the shots that are genuinely hard, and a
+            // beginner missing a hoop it is standing in front of is not
+            // difficulty, it is a bug with an excuse.
+            AimError = 0.032, PowerError = 0.24, RangeError = 2.6
         };
 
         /// <summary>Knows what to do, is not much good at doing it.</summary>
         public static Bot Casual(int seed = DefaultSeed) => new Bot(seed)
         {
-            SweepAngles = 18, PlacementAngles = 6,
-            AimError = 0.014, PowerError = 0.11, RangeError = 1.2
-        };
-
-        /// <summary>A sound club player.</summary>
-        public static Bot Steady(int seed = DefaultSeed) => new Bot(seed)
-        {
-            SweepAngles = 30, PlacementAngles = 8,
-            AimError = 0.006, PowerError = 0.045, RangeError = 1.0
+            SweepAngles = 24, PlacementAngles = 6,
+            AimError = 0.022, PowerError = 0.16, RangeError = 1.25
         };
 
         /// <summary>
         /// An excellent human, not a machine: it looks a stroke further ahead
-        /// and its hand is very good, but it is still a hand. Long shots are
-        /// still missed occasionally, which is what makes it beatable at all.
+        /// and its hand is good, but it is still a hand. It misses long shots
+        /// often enough to lose, which is the whole point of it.
         /// </summary>
         public static Bot Expert(int seed = DefaultSeed) => new Bot(seed)
         {
-            Lookahead = 1, SweepAngles = 48, PlacementAngles = 12, Deepen = 4,
-            AimError = 0.0035, PowerError = 0.02, RangeError = 0.8
+            Lookahead = 1, SweepAngles = 44, PlacementAngles = 10, Deepen = 4,
+            AimError = 0.009, PowerError = 0.06, RangeError = 0.95
         };
+
+        /// <summary>
+        /// What this bot is trying to achieve, as opposed to how well it strikes
+        /// the ball. Every level shares one set: judgement is not a difficulty
+        /// setting -- a beginner wants the same things as an expert and is worse
+        /// at getting them, which is what makes a beginner rather than a lunatic.
+        /// </summary>
+        public BotWeights Weights = BotWeights.Default;
+
+        /// <summary>
+        /// A learned value function, used INSTEAD of the weights when it is
+        /// there.
+        ///
+        /// The two answer different questions and the search does not care
+        /// which: the weights score a stroke by adding up rewards for what it
+        /// did, the net scores the position it left by how often that position
+        /// is won from. Only the ordering of candidates matters, so a
+        /// probability and a made-up point total are interchangeable here.
+        /// </summary>
+        public Net Net;
 
         /// <summary>Strokes simulated by the current or last Choose.</summary>
         public volatile int LastSearched;
@@ -232,11 +289,27 @@ namespace Croquet.Core
         double Spread(double power, CourtSpec c)
         {
             double range = power * power / (2 * Math.Max(0.05, c.Friction));
-            return 0.12 + range / 10.0 * RangeError;
+
+            // Linear AND quadratic, because a linear spread cannot describe a
+            // player. Nobody's error at one metre is a fifth of their error at
+            // five; it is nearer nothing. With only a linear term the two ends
+            // are tied together -- turning a level's long game down drags its
+            // short game down with it, and a beginner ends up missing taps to
+            // keep it missing roquets. The square separates them: negligible
+            // close in, and the dominant term by the time a shot crosses the
+            // court.
+            return 0.10 + (range / 12.0 + range * range / 260.0) * RangeError;
         }
 
-        /// <summary>Puts the hand's error on a stroke, in place.</summary>
-        void Wobble(BotMove m, CourtSpec c)
+        /// <summary>
+        /// Puts the hand's error on a stroke, in place.
+        ///
+        /// Public so a hand can be measured on its own (`BotLadderTests`). A
+        /// full game mixes the hand with the search and the search is not what
+        /// separates the levels, so "how often does this level hit a ball six
+        /// metres away" has to be asked of this directly.
+        /// </summary>
+        public void Wobble(BotMove m, CourtSpec c)
         {
             double spread = Spread(m.Power, c);
 
@@ -284,10 +357,15 @@ namespace Croquet.Core
         {
             LastSearched = 0;
             Planned = 0;
-            return SearchInner(game, depth, out best);
+
+            // Free plies on top of whatever Lookahead pays for. A roquet buys
+            // TWO strokes -- the croquet stroke and the continuation after it --
+            // and a search that values only one of them undervalues every roquet
+            // by most of what a roquet is for.
+            return SearchInner(game, depth, FreePlies, out best);
         }
 
-        BotMove SearchInner(Game game, int depth, out double best)
+        BotMove SearchInner(Game game, int depth, int free, out double best)
         {
             int me = game.Striker;
             var candidates = game.Stroke == StrokeKind.Bonus
@@ -319,7 +397,7 @@ namespace Croquet.Core
                 catch (InvalidOperationException) { continue; }
                 LastSearched++;
 
-                double s = Evaluate(game, clone, r, me);
+                double s = Judge(game, clone, r, me);
                 m.Score = s;
                 scored.Add((m, s, clone));
             }
@@ -381,16 +459,80 @@ namespace Croquet.Core
                 scored.Sort((a, b) => b.Score.CompareTo(a.Score));
             }
 
-            int deepen = depth > 0 ? Math.Min(Deepen, scored.Count) : 0;
-            for (int i = 0; i < deepen; i++)
+            // A stroke that EARNS ANOTHER is always looked one further, whatever
+            // Lookahead says, because such a stroke is not finished and scoring
+            // it as though it were is simply wrong.
+            //
+            // This is what made the bot decline open roquets. It saw itself
+            // standing next to a ball six metres from its own hoop, compared
+            // that with a quiet tap into position, and preferred the tap --
+            // correctly, on what it could see, because the two strokes it had
+            // just won were worth nothing at all until somebody played them.
+            // No weight on "roquet" can fix that: a flat bonus cannot know
+            // whether the croquet stroke available is a break or a nuisance.
+            //
+            // It terminates because a bonus stroke only deepens when Lookahead
+            // pays for it, so an ordinary stroke looks into its bonus and stops.
+            // Deepen while either budget allows: Lookahead buys plies anywhere,
+            // the free ones are spent only while the turn is still ours.
+            if (depth > 0 || free > 0)
             {
-                var (m, s, after) = scored[i];
-                // Only worth looking further if the turn is still ours.
-                if (after.Winner != null || after.Striker != me) continue;
+                // The best few overall AND the best few that keep the turn,
+                // which are not the same list and must both be looked at.
+                //
+                // Deepening the top of one sorted list cannot work here: a
+                // roquet's shallow score is precisely the thing that is wrong
+                // about it, so it never reaches the top and never gets the
+                // deepening that would have shown what it was worth. It has to
+                // be looked at BECAUSE it earned another stroke, not because it
+                // already looked good without one.
+                // ONE of each on a free ply, and no more. Every ply runs a
+                // whole search of its own, so the budget goes as the product
+                // rather than the sum -- deepening four candidates twice over
+                // made a game take six and a half seconds instead of seven
+                // tenths, which is nine times the cost to answer one question.
+                //
+                // And it only IS one question: what is this roquet worth. The
+                // best croquet stroke available answers that; the fourth best
+                // does not contribute to it.
+                int keep = depth > 0 ? Deepen : 1;
+                int done = 0, bonus = 0;
 
-                SearchInner(after, depth - 1, out double follow);
-                // Discounted: a stroke in hand is worth more than one hoped for.
-                scored[i] = (m, s + follow * 0.75, after);
+                for (int i = 0; i < scored.Count && done < keep * 2; i++)
+                {
+                    var (m, s, after) = scored[i];
+                    if (after.Winner != null || after.Striker != me) continue;
+
+                    bool near = i < keep;                          // good already
+                    bool earned = after.Stroke == StrokeKind.Bonus; // or earns more
+                    if (!near && !earned) continue;
+                    if (earned && !near && bonus++ >= keep) continue;
+
+                    bool fine = coarse;
+                    coarse = true;
+                    SearchInner(after, depth - 1, free - 1, out double follow);
+                    coarse = fine;
+                    // The two judges are different KINDS of function and only
+                    // one of them may be added up.
+                    //
+                    // Evaluate is a REWARD -- how much good this stroke did --
+                    // so a stroke plus its discounted follow-up is the total
+                    // good, and adding is right.
+                    //
+                    // A net is a VALUE: how often this side wins from here. It
+                    // already contains everything that happens afterwards, so
+                    // adding the follow-up counts the future twice and breaks
+                    // the bounds with it. The deeper estimate simply REPLACES
+                    // the shallow one, which is what it is for.
+                    //
+                    // Added, it cost every game. A stroke keeping the turn could
+                    // reach 1.75 while a stroke that WON returned 1.0 and was
+                    // never deepened -- the game being over -- so anything above
+                    // 0.25 outranked winning and the bot could not close out.
+                    // Three hundred games, no wins, from one plus sign.
+                    scored[i] = (m, Net != null ? follow : s + follow * 0.75, after);
+                    done++;
+                }
             }
 
             foreach (var (m, s, _) in scored)
@@ -429,7 +571,7 @@ namespace Croquet.Core
                 catch (InvalidOperationException) { continue; }
                 LastSearched++;
 
-                total += Evaluate(game, clone, r, me);
+                total += Judge(game, clone, r, me);
                 n++;
             }
             return total / n;
@@ -532,9 +674,9 @@ namespace Croquet.Core
             }
 
             // A coarse sweep, for everything the above did not think of.
-            for (int i = 0; i < SweepAngles; i++)
+            for (int i = 0; i < Sweeps; i++)
             {
-                double a = i * 2 * Math.PI / SweepAngles;
+                double a = i * 2 * Math.PI / Sweeps;
                 var aim = new Vec2(Math.Cos(a), Math.Sin(a));
                 foreach (var d in new[] { 1.5, 4.0, 9.0, 18.0 })
                     list.Add(new BotMove { Aim = aim, Power = SpeedFor(d, c), Note = "sweep" });
@@ -562,7 +704,7 @@ namespace Croquet.Core
             foreach (var way in ways)
             {
                 // Where it lies has no placement, so one pass over it is enough.
-                int places = way == BonusWay.WhereItLies ? 1 : PlacementAngles;
+                int places = way == BonusWay.WhereItLies ? 1 : Places;
 
                 for (int p = 0; p < places; p++)
                 {
@@ -600,7 +742,135 @@ namespace Croquet.Core
                 }
             }
 
+            Splits(game, list, ways);
+
             return list;
+        }
+
+        /// <summary>
+        /// The croquet shot as it is actually played, which nothing above was
+        /// proposing.
+        ///
+        /// The two balls part in a way the striker controls completely. The
+        /// croqueted ball leaves along the LINE OF CENTRES -- the line from
+        /// where the striker is set down through the ball it is touching -- and
+        /// the striker keeps whatever is at right angles to that. So a croquet
+        /// stroke is chosen in two independent halves: the placement decides
+        /// where the OTHER ball goes, and the aim off that line decides how far
+        /// it goes and where YOURS ends up.
+        ///
+        /// The candidates before this only ever aimed at the striker's own hoop
+        /// or straight through the ball, from placements swept blindly round the
+        /// circle. Both of those are croquet strokes, but the one that matters
+        /// -- send that ball THERE while I go THERE -- was only ever found by
+        /// coincidence, when a swept placement happened to line up.
+        ///
+        /// It shows: the bot was declining open roquets, and it was right to,
+        /// because a roquet it cannot convert really is worth very little. That
+        /// is a search failing to propose a shot, not an evaluator undervaluing
+        /// one, and no amount of training on the weights would have fixed it.
+        /// </summary>
+        void Splits(Game game, List<BotMove> list, BonusWay[] ways)
+        {
+            var c = game.World.Spec;
+            int me = game.Striker, hit = game.RoquetedBall;
+            var field = game.World.Field;
+            var other = game.World.Balls[hit].Pos;
+
+            foreach (var send in Somewhere(game, hit))
+            {
+                // Stand on the far side of the ball from where it is to go, so
+                // that the line of centres points at the destination.
+                var back = other - send;
+                if (back.LengthSq < 1e-9) continue;
+                var place = back.Normalized;
+
+                foreach (var way in ways)
+                {
+                    // The croquet shot, and the mallet head as its harder
+                    // cousin. A foot shot drives the OTHER ball and leaves the
+                    // striker put, which is not a split, and where-it-lies has
+                    // no placement to choose at all.
+                    if (way != BonusWay.CroquetShot && way != BonusWay.MalletHead)
+                        continue;
+
+                    Vec2 stand;
+                    try { stand = game.BonusPlacement(way, place); }
+                    catch (InvalidOperationException) { continue; }
+
+                    var line = other - stand;
+                    if (line.LengthSq < 1e-9) continue;
+                    line = line.Normalized;
+
+                    double reach = (send - other).Length;
+
+                    // Off the line of centres by a spread of angles. Straight
+                    // down it is a drive -- everything goes into the other ball
+                    // and the striker stops dead. Wider, the striker keeps more
+                    // and the other goes less far, which is the whole range of
+                    // the stroke from a full send to a gentle split.
+                    foreach (double off in new[] { 0.0, 0.35, 0.7, -0.35, -0.7 })
+                    {
+                        double a = Math.Atan2(line.Y, line.X) + off;
+                        var aim = new Vec2(Math.Cos(a), Math.Sin(a));
+
+                        // Wider angles put less into the croqueted ball, so the
+                        // stroke has to be firmer to send it the same distance.
+                        double share = Math.Max(0.25, Math.Cos(off));
+                        list.Add(new BotMove
+                        {
+                            IsBonus = true, Way = way, Placement = place,
+                            Aim = aim,
+                            Power = SpeedFor(reach / share, c) * 1.05,
+                            Note = $"{way} split, sending it {reach:0.0}m"
+                        });
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Places worth sending a croqueted ball, which depends entirely on
+        /// whose ball it is.
+        ///
+        /// A partner wants to be in front of its own next hoop -- that is the
+        /// whole of team play, and the reason a croquet stroke exists. An
+        /// opponent wants to be as far from its own next hoop as the lawn
+        /// allows, which in practice means a corner.
+        /// </summary>
+        IEnumerable<Vec2> Somewhere(Game game, int ball)
+        {
+            var field = game.World.Field;
+            var c = game.World.Spec;
+            int point = game.States[ball].Point;
+
+            if (!field.IsFinished(point))
+            {
+                var theirs = field.TargetFor(point);
+
+                if (SameSide(game, game.Striker, ball))
+                {
+                    // In front of it, on the side they have to run it from.
+                    int dir = field.IsPeg(point) ? 0 : field.DirectionFor(point);
+                    yield return theirs;
+                    if (dir != 0)
+                        foreach (var back in new[] { 0.6, 1.5 })
+                            yield return new Vec2(theirs.X - dir * back, theirs.Y);
+                }
+                else
+                {
+                    // The corner furthest from where they want to be.
+                    double x = theirs.X < c.Width / 2 ? c.Width - 1.0 : 1.0;
+                    double y = theirs.Y < c.Height / 2 ? c.Height - 1.0 : 1.0;
+                    yield return new Vec2(x, y);
+                    yield return new Vec2(x, theirs.Y);
+                }
+            }
+
+            // And somewhere the striker can use it again next turn: near its
+            // own next point, which is where the striker is headed anyway.
+            int mine = game.States[game.Striker].Point;
+            if (!field.IsFinished(mine)) yield return field.TargetFor(mine);
         }
 
         // ---- evaluation ---------------------------------------------------
@@ -610,11 +880,37 @@ namespace Croquet.Core
         /// dominate everything, then keeping the turn, then being somewhere
         /// useful next stroke.
         /// </summary>
+        /// <summary>
+        /// What this bot thinks the position after a stroke is worth, by
+        /// whichever of the two it has been given.
+        ///
+        /// One place, so that everything else in the search -- the risk
+        /// re-pricing, the deepening, the ordering -- is written once and works
+        /// for both. Swapping a hand-built evaluator for a learned one should
+        /// not be a change to the search, and here it is not.
+        /// </summary>
+        double Judge(Game before, Game after, StrokeResult r, int me) =>
+            Net != null ? Net.Value(after, me)
+                        : Evaluate(before, after, r, me, Weights);
+
         /// <summary>Are these two balls on the same side? Cutthroat: only itself.</summary>
         public static bool SameSide(Game g, int a, int b) =>
             a == b || (g.Side != null && g.Side[a] == g.Side[b]);
 
-        public static double Evaluate(Game before, Game after, StrokeResult r, int me)
+        public static double Evaluate(Game before, Game after, StrokeResult r, int me) =>
+            Evaluate(before, after, r, me, BotWeights.Default);
+
+        /// <summary>
+        /// What the position after a stroke is worth to <paramref name="me"/>.
+        ///
+        /// The FEATURES here are croquet -- a hoop run, a partner sent nearer
+        /// its own hoop, a ball left in a corner -- and they are hand-built
+        /// because that is what a person knows and a search does not. What each
+        /// is WORTH comes from <paramref name="k"/>, which is measured rather
+        /// than guessed: see BotWeights and tools/Croquet.Train.
+        /// </summary>
+        public static double Evaluate(Game before, Game after, StrokeResult r, int me,
+                                      BotWeights k)
         {
             var field = after.World.Field;
             var c = after.World.Spec;
@@ -623,25 +919,25 @@ namespace Croquet.Core
             // Scoring is the whole object of the game, and a stroke that scores
             // also earns another, so it is worth far more than position.
             int gained = after.States[me].Point - before.States[me].Point;
-            s += gained * 1200;
+            s += gained * k.Hoop;
 
             // Points other balls were driven through count for their own side,
             // so putting a partner through its hoop is nearly as good as scoring
             // and putting an opponent through theirs is a gift.
             foreach (var (ball, _) in r.OthersScored)
-                s += SameSide(after, me, ball) ? 900 : -750;
+                s += SameSide(after, me, ball) ? k.PartnerScored : -k.OpponentScored;
 
             // Winning is winning whichever of our balls did it.
             if (after.Winner != null && after.Winner.Contains(me)) s += 100000;
             if (after.Winner != null && !after.Winner.Contains(me)) s -= 100000;
-            if (r.PeggedOut) s += 3000;
+            if (r.PeggedOut) s += k.PeggedOut;
 
             // A roquet is two strokes and the beginning of a break.
-            if (r.Roqueted >= 0) s += 450;
+            if (r.Roqueted >= 0) s += k.Roquet;
 
             // Losing the turn is the real cost of a bad stroke.
-            if (r.TurnEnded) s -= 700;
-            if (r.EndedByOutOfBounds) s -= 500;   // and it was avoidable
+            if (r.TurnEnded) s -= k.TurnEnded;
+            if (r.EndedByOutOfBounds) s -= k.WentOut;   // and it was avoidable
 
             if (!after.World.Balls[me].InPlay) return s;   // round; nothing else matters
 
@@ -652,7 +948,7 @@ namespace Croquet.Core
             {
                 var tgt = field.TargetFor(point);
                 double d = (tgt - pos).Length;
-                s -= d * 22;
+                s -= d * k.ToPoint;
 
                 // Being in front of the hoop, on the right side and near the
                 // line of it, is worth much more than being merely close: it is
@@ -662,8 +958,9 @@ namespace Croquet.Core
                     int dir = field.DirectionFor(point);
                     double along = (tgt.X - pos.X) * dir;      // >0 means still to come
                     double across = Math.Abs(pos.Y - tgt.Y);
-                    if (along > 0 && along < 3.0 && across < 0.9)
-                        s += 260 * (1 - across / 0.9) * (1 - along / 3.0);
+                    if (along > 0 && along < k.InFrontDepth && across < k.InFrontWidth)
+                        s += k.InFront * (1 - across / k.InFrontWidth)
+                                       * (1 - along / k.InFrontDepth);
                 }
             }
 
@@ -675,7 +972,7 @@ namespace Croquet.Core
                 if (after.States[me].Dead.Contains(j)) continue;
                 nearest = Math.Min(nearest, (after.World.Balls[j].Pos - pos).Length);
             }
-            if (nearest < double.MaxValue) s -= Math.Min(nearest, 12) * 6;
+            if (nearest < double.MaxValue) s -= Math.Min(nearest, k.NearestCap) * k.ToNearest;
 
             // What the stroke did to everyone else. This is the whole reason a
             // split or a send is worth playing: the striker gains nothing
@@ -701,29 +998,31 @@ namespace Croquet.Core
                 // and in cutthroat every other ball is an opponent, so the
                 // whole game became blasting whatever was nearest as hard as
                 // possible. Three metres is about where it stops mattering.
-                closer = closer > 3.0 ? 3.0 : closer < -3.0 ? -3.0 : closer;
+                closer = closer > k.ShoveCap ? k.ShoveCap
+                       : closer < -k.ShoveCap ? -k.ShoveCap : closer;
 
                 if (SameSide(after, me, j))
                 {
-                    s += closer * 30;
-                    if (r.BroughtIn.Contains(j)) s -= 250;    // sent a partner off
+                    s += closer * k.PartnerCloser;
+                    if (r.BroughtIn.Contains(j)) s -= k.PartnerSentOff;   // sent a partner off
                 }
                 else
                 {
-                    s -= closer * 22;                         // do them no favours
+                    s -= closer * k.OpponentCloser;           // do them no favours
                 }
             }
 
             // Two shots in hand and nothing to show for the first is a waste:
             // with a stroke to spare it should be improving something, its own
             // position or somebody else's.
-            if (r.ShotsLeft >= 2 && r.PointsScored.Count == 0 && r.Roqueted < 0) s -= 150;
+            if (r.ShotsLeft >= 2 && r.PointsScored.Count == 0 && r.Roqueted < 0)
+                s -= k.WastedShot;
 
             // Off the edge of the lawn is a poor place to leave a ball even when
             // it costs nothing directly.
             double edge = Math.Min(Math.Min(pos.X, c.Width - pos.X),
                                    Math.Min(pos.Y, c.Height - pos.Y));
-            if (edge < 1.0) s -= (1.0 - edge) * 120;
+            if (edge < k.EdgeBand) s -= (1 - edge / k.EdgeBand) * k.EdgePenalty;
 
             return s;
         }
