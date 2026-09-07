@@ -480,11 +480,11 @@ roquets are worth something is the obvious next run.
 
 ### The value net, and why it lost every game
 
-`core/Net.cs` and `core/Sight.cs` are a small value network -- 60 numbers in
-describing a position, one out saying how often this side wins from it -- and
-`tools/Croquet.Train` can `collect` self-play positions labelled by who won and
-`learn` a net from them. It is **not in use**, and the reason is the most useful
-thing here.
+`core/Net.cs` and `core/Sight.cs` are a value network -- numbers in describing a
+position, one out saying how far ahead this ball is about to be -- and
+`tools/Croquet.Train` can `collect` self-play positions, `learn` a net from them
+and `cycle` the two. Two attempts are described below because both failed and
+the reasons are the most useful thing here; the third is under way.
 
 The first run fit well: 67.5% of held-back games called correctly, loss 0.582
 against the 0.693 of always guessing the average, and almost no gap between
@@ -523,9 +523,64 @@ the wrong one.
 
 `NetTests.How_much_does_the_net_separate_strokes` is the gate for the next
 attempt: any net at `weights/net.txt` must spread those 144 strokes by more than
-0.15 or it cannot be used to choose between them, whatever its accuracy. The
-first attempt is kept at `weights/net-first-attempt.txt` rather than deleted,
+half a point or it cannot be used to choose between them, whatever its accuracy.
+The first attempt is kept at `weights/net-first-attempt.txt` rather than deleted,
 because a 67.5% predictor that plays at zero is worth being able to re-examine.
+
+**A second attempt reported 200-0 and measured nothing at all.** The shell
+command that was supposed to collect fresh positions failed, `learn` read the
+PREVIOUS encoding's file as though its records were the current length, and
+fitted the misalignment happily -- the tail of one position spliced to the head
+of the next is a deterministic pattern and a network will learn it. The numbers
+looked reasonable throughout. Positions now carry a magic mark and the encoding
+size they were written for, and `Positions.Trouble` refuses the file rather than
+training on nonsense. Both old nets are kept but neither loads any more: the
+encoding has moved and `Net.FromText` returns null rather than reading them as
+the wrong shape.
+
+### What the third attempt changes
+
+Three things, and the third is the one that matters.
+
+**The encoding says croquet now.** `Sight` was deliberately bare geometry -- no
+"am I in front of the hoop" -- on the grounds that those are what the linear
+evaluator had to be told and what a network is for working out. That is right at
+AlphaZero's data budget and wrong at ours: learning "in front of the hoop" from
+raw coordinates means discovering a rotation, a sign convention and a two-sided
+threshold from a few thousand games, with no structure making any of it cheap
+the way a convolution over a board does. So it is handed the facts a player
+would say out loud -- where a ball stands in its hoop's own frame, whether it is
+a rover, how much deadness it is carrying, how far away each ball is and whether
+the line to it is clear. All facts, none of them opinions: what any of it is
+WORTH is still entirely the network's to decide, which is the line that matters.
+16 numbers a ball and 99 in total.
+
+The rule that stays: **nothing in the encoding may be identical for every
+candidate in a turn.** That is what the aggregate progress inputs were, and it
+is why the first net scored every stroke alike.
+
+**The net is bigger.** 64 hidden units is about eight thousand weights, which is
+not enough room for "what does this particular layout call for". 128 is 29,441,
+against something like a million positions -- data was never the binding
+constraint.
+
+**And it plays its own games.** This is the real change. A net learned from games
+the LINEAR WEIGHTS played can at best predict how well those weights do; it is
+being taught their judgement, and imitating a teacher does not beat the teacher.
+`cycle` runs generations -- collect with the best net so far, learn from the last
+few generations of positions, play 200 games against the weights, and promote
+only if it won. A generation that fails is kept under its own name and the next
+one starts from the last that succeeded, so a bad round costs time rather than
+progress.
+
+```sh
+dotnet run --project tools/Croquet.Train -c Release -- cycle --generations 4 --games 1500
+```
+
+Learning from the last **two** generations rather than only the newest is not a
+detail: training each generation on its own games alone is how a self-play loop
+oscillates, chasing whatever the newest policy did and forgetting what it held
+last time. A replay buffer, spelled as files.
 
 ### The search knows whose hand it is
 

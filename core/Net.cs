@@ -39,7 +39,22 @@ namespace Croquet.Core
     /// </summary>
     public sealed class Net
     {
-        public const int Hidden = 64;
+        /// <summary>
+        /// Units in each of the two hidden layers.
+        ///
+        /// Was 64, which is about eight thousand weights in total -- a model
+        /// small enough that "what does this layout call for" is not a question
+        /// it has room to answer. It has around a million positions to learn
+        /// from and every one of them is used eight times over a run, so the
+        /// binding constraint was never data. 128 is four times the weights and
+        /// costs about four times the arithmetic per position scored, which
+        /// against a 19 ms search budget is affordable.
+        ///
+        /// Changing this changes the file format, and <see cref="FromText"/>
+        /// refuses a net written for a different shape rather than reading it
+        /// as the wrong numbers.
+        /// </summary>
+        public const int Hidden = 128;
 
         /// <summary>
         /// What a finished game is worth, in the same points the net predicts.
@@ -113,16 +128,32 @@ namespace Croquet.Core
                 return -Won;
             }
 
-            var x = Sight.Buffer();
-            Sight.Read(game, me, x);
+            var x = seen ??= new double[Sight.Size];
+            Sight.Read(game, me, x);            // clears before it writes
             return Value(x);
         }
+
+        /// <summary>
+        /// Scratch space for scoring a position, one set per thread.
+        ///
+        /// This is the hottest loop in the whole program -- the search scores
+        /// thousands of candidates for one stroke -- and a fresh input buffer
+        /// and two hidden layers for each of them is a few kilobytes of garbage
+        /// per candidate, which is collection pressure rather than arithmetic.
+        ///
+        /// Thread-static rather than a field, because the bot searches on a
+        /// worker thread while training plays many games at once through
+        /// Parallel.For: one shared buffer would be two games writing over each
+        /// other's position. Assigned lazily, since a ThreadStatic initialiser
+        /// only ever runs on the thread that happened to trigger the class.
+        /// </summary>
+        [ThreadStatic] static double[] seen, hidden1, hidden2;
 
         /// <summary>The forward pass, on an already-encoded position.</summary>
         public double Value(double[] x)
         {
-            var h1 = new double[Hidden];
-            var h2 = new double[Hidden];
+            var h1 = hidden1 ??= new double[Hidden];
+            var h2 = hidden2 ??= new double[Hidden];
             Forward(x, h1, h2, out double y);
             return y;
         }

@@ -282,6 +282,50 @@ public static class Positions
         return null;
     }
 
+    /// <summary>
+    /// Reads several files as one set, which is what a generation past the
+    /// first should learn from.
+    ///
+    /// Training each generation only on its own games is how a self-play loop
+    /// oscillates: the network chases whatever the newest policy happened to do
+    /// and forgets the position it held last time, so the two take turns being
+    /// wrong instead of converging. Keeping the last few generations in the
+    /// batch is the cheap standard fix -- a replay buffer, spelled as files --
+    /// and it costs nothing but disk.
+    ///
+    /// Files that are missing or of the wrong encoding are skipped rather than
+    /// fatal, because the natural way to use this is "the last three
+    /// generations" at a point where only one of them exists.
+    /// </summary>
+    public static (float[] X, float[] Y) LoadMany(IEnumerable<string> paths)
+    {
+        var good = new List<string>();
+        int total = 0;
+
+        foreach (var p in paths)
+        {
+            if (Trouble(p) != null) continue;
+            good.Add(p);
+            total += Count(p);
+        }
+
+        if (good.Count == 0) throw new InvalidDataException("no usable position files");
+
+        var x = new float[(long)total * Sight.Size];
+        var y = new float[total];
+        int at = 0;
+
+        foreach (var p in good)
+        {
+            var (px, py) = Load(p);
+            Array.Copy(px, 0, x, (long)at * Sight.Size, px.LongLength);
+            Array.Copy(py, 0, y, at, py.Length);
+            at += py.Length;
+        }
+
+        return (x, y);
+    }
+
     /// <summary>Reads the lot into memory. A million samples is 230 MB.</summary>
     public static (float[] X, float[] Y) Load(string path)
     {

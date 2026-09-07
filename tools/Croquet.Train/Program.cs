@@ -184,6 +184,146 @@ switch (command)
         break;
     }
 
+    // Generations of self-play: collect, learn, measure, promote, repeat.
+    //
+    // This is the piece that was missing, and without it the whole approach is
+    // capped. A net learned from games the LINEAR WEIGHTS played can at best
+    // predict how well those weights do -- it is being taught their judgement,
+    // and imitating a teacher does not beat the teacher. It only exceeds them
+    // by playing its own games and learning from those, so that what it is
+    // fitting is the value of ITS play, which then improves the play, which
+    // then improves the value. That loop is the entire idea.
+    //
+    // Each generation is gated on beating the weights over real games, and only
+    // a generation that does is promoted to weights/net.txt. A generation that
+    // does not is kept under its own name and the next one starts from the last
+    // net that did, so a bad round costs time rather than progress.
+    case "cycle":
+    {
+        int generations = Num("generations", 4);
+        int games = Num("games", 1500);
+        int keep = Math.Max(1, Num("keep", 2));
+        int judged = Num("judge", 200);
+
+        string dataDir = Path.Combine(Root(), "data");
+        string bestPath = Arg("out", Path.Combine(Root(), "weights", "net.txt"));
+        Directory.CreateDirectory(dataDir);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(bestPath))!);
+
+        var stop = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); };
+
+        // Two different nets, and conflating them stalls the whole loop.
+        //
+        // `latest` is what PLAYS the next generation's games, and it is always
+        // the newest one trained, beaten or not. `best` is what SHIPS, and only
+        // a generation that won its match becomes it.
+        //
+        // Playing with the best rather than the latest sounds safer and is a
+        // trap: the first net is unlikely to beat weights that took 34,000
+        // games to tune, so nothing is ever promoted, every generation collects
+        // with the linear bot again, and the run is an expensive way to imitate
+        // the teacher four times. Self-play has to be allowed to be worse than
+        // the baseline on its way past it.
+        var best = File.Exists(bestPath) ? Net.FromText(File.ReadAllText(bestPath)) : null;
+        var latest = best;
+        double bestRate = 0;
+
+        Console.WriteLine($"{generations} generations, {games} games each, " +
+                          $"learning from the last {keep}");
+        Console.WriteLine($"{Sight.Size} inputs, {Net.Hidden} hidden, " +
+                          $"{Net.Weights:N0} weights");
+        Console.WriteLine(best == null
+            ? "starting from the linear weights -- generation 1 learns from their games\n"
+            : $"starting from {Path.GetFileName(bestPath)}\n");
+
+        var whole = Stopwatch.StartNew();
+
+        for (int g = 1; g <= generations && !stop.IsCancellationRequested; g++)
+        {
+            Console.WriteLine($"=== generation {g}/{generations} " +
+                              $"({whole.Elapsed.TotalMinutes:0}m in) ===");
+
+            // ---- play ----
+            var pattern = Bot.Casual();
+            pattern.Net = latest;                   // null plays the linear weights
+
+            string data = Path.Combine(dataDir, $"positions-gen{g}.bin");
+            var clock = Stopwatch.StartNew();
+
+            int kept = Positions.Collect(data, games, 7_000 + g * 100_000, pattern,
+                stop.Token, (done, of) =>
+                {
+                    if (done % 8 != 0 && done != of) return;
+                    var left = TimeSpan.FromSeconds(
+                        clock.Elapsed.TotalSeconds / done * (of - done));
+                    Console.Write($"\r  playing {done}/{of}   ~{left.TotalMinutes:0}m left    ");
+                });
+
+            if (stop.IsCancellationRequested) { Console.WriteLine(); break; }
+            Console.WriteLine($"\r  {kept:N0} positions in " +
+                              $"{clock.Elapsed.TotalMinutes:0.0}m                    ");
+
+            // ---- learn ----
+            var batch = new List<string>();
+            for (int back = 0; back < keep; back++)
+                if (g - back >= 1)
+                    batch.Add(Path.Combine(dataDir, $"positions-gen{g - back}.bin"));
+
+            var (px, py) = Positions.LoadMany(batch);
+
+            var fit = new Learn
+            {
+                Epochs = Num("epochs", 10),
+                Batch = Num("batch", 256),
+                Rate = Real("rate", 0.002)
+            };
+
+            // From the best net so far rather than from scratch: a generation
+            // is meant to be an improvement on the last one, and throwing the
+            // weights away each round spends most of every run relearning what
+            // was already known.
+            var trained = fit.Fit(latest ?? Net.Fresh(g), px, py, stop.Token,
+                                  s => Console.WriteLine("  " + s));
+
+            string genPath = Path.Combine(Root(), "weights", $"net-gen{g}.txt");
+            File.WriteAllText(genPath, trained.ToText());
+            latest = trained;
+
+            if (stop.IsCancellationRequested) break;
+
+            // ---- and does it actually play better ----
+            Console.WriteLine($"\n  {judged} games against the linear weights...");
+
+            var outcome = Duel.Series(BotWeights.Default, BotWeights.Default, judged,
+                                      900_000 + g * 10_000, Positions.Balls,
+                                      stop.Token, null, trained, solo: true);
+
+            Console.WriteLine($"  generation {g}: {outcome}");
+            Console.WriteLine("  " + Wilson(outcome));
+
+            if (outcome.Rate > bestRate && outcome.Rate > 0.5)
+            {
+                bestRate = outcome.Rate;
+                best = trained;
+                File.WriteAllText(bestPath, trained.ToText());
+                Console.WriteLine($"  promoted -> {bestPath}\n");
+            }
+            else
+            {
+                Console.WriteLine($"  kept as {Path.GetFileName(genPath)}; " +
+                                  "the next generation starts from the last good one\n");
+            }
+        }
+
+        Console.WriteLine(bestRate > 0
+            ? $"best generation played {bestRate * 100:0.0}% against the weights " +
+              $"-- {bestPath}"
+            : "no generation beat the linear weights; nothing promoted");
+        Console.WriteLine($"total {whole.Elapsed.TotalHours:0.0}h");
+        break;
+    }
+
     case "train":
     {
         var run = new Trainer
@@ -221,11 +361,15 @@ switch (command)
             Croquet.Train -- what the bot should be trying to achieve.
 
               time                      how long a self-play game takes
-              collect --games N         self-play positions labelled by who won
+              cycle --generations N     play, learn, measure, promote, repeat
+              collect --games N         self-play positions, labelled
               learn --epochs N          fit the value net to them
               netmatch [file]           the net against the learned weights
               match [file] --games N    a weight set against the baseline
               train --rounds N --games N --children N --step F --from F --out F
+
+            `cycle` is the one to run. The other three are its steps, kept
+            separately for when one of them needs looking at on its own.
 
             Fitness is games won and nothing else. Both sides always get the
             same hand, so a match measures judgement rather than striking.
