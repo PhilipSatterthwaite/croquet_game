@@ -107,7 +107,7 @@ public static class Positions
     /// twenty -- about a turn or two, which is the horizon over which a stroke
     /// can be said to have worked.
     /// </summary>
-    const double Fade = 0.88;
+    public const double Fade = 0.88;
 
     /// <summary>
     /// Which side each ball is on, or null for cutthroat.
@@ -147,6 +147,50 @@ public static class Positions
         return true;
     }
 
+    /// <summary>
+    /// Puts the balls out: the ordinary opening, or a lawn part way through a
+    /// game if this one is to be scattered.
+    ///
+    /// Scattered balls are placed clear of each other and of the furniture and
+    /// given a course point somewhere short of finished. Nothing here has to be
+    /// a position real play would reach -- what keeps a label honest is that it
+    /// is measured from what the balls actually do NEXT, and they play on from
+    /// here under the ordinary rules whatever the arrangement.
+    /// </summary>
+    public static void Deal(Game game, Random dice)
+    {
+        var spec = game.World.Spec;
+
+        for (int i = 0; i < Balls; i++)
+        {
+            game.States[i].Started = true;
+            game.World.Balls[i].InPlay = true;
+            game.World.Balls[i].Pos = game.World.Field.StartSpot
+                                    + new Vec2(0, (i - (Balls - 1) / 2.0) * 0.35);
+        }
+
+        if (dice.NextDouble() >= Scatter) return;
+
+        for (int i = 0; i < Balls; i++)
+        {
+            game.States[i].Point = dice.Next(0, Math.Max(1, game.States[i].Total - 1));
+
+            for (int tries = 0; tries < 40; tries++)
+            {
+                var at = new Vec2(spec.BallRadius + dice.NextDouble()
+                                    * (spec.Width - spec.BallRadius * 2),
+                                  spec.BallRadius + dice.NextDouble()
+                                    * (spec.Height - spec.BallRadius * 2));
+
+                if (Room(game, i, at, spec.BallRadius))
+                {
+                    game.World.Balls[i].Pos = at;
+                    break;
+                }
+            }
+        }
+    }
+
     public static CourtSpec Lawn() => new CourtSpec
     {
         Width = 30.48,
@@ -180,8 +224,7 @@ public static class Positions
         // arbitrary number in the label slot, and it TRAINS: the misalignment
         // is a deterministic pattern and a network fits it happily. A whole
         // night went that way, and the result looked good.
-        write.Write(Mark);
-        write.Write(Sight.Size);
+        WriteHeader(write, Mark);
 
         // The net that is PLAYING is also the one that finishes the labels, and
         // it is held fixed for the whole collection -- a target network. Letting
@@ -349,45 +392,7 @@ public static class Positions
         var game = new Game(new World(arr, Field.NineWicket(), Lawn()), Sides(),
                             RuleOptions.Basic);
 
-        var spec = game.World.Spec;
-        bool scattered = dice.NextDouble() < Scatter;
-
-        for (int i = 0; i < Balls; i++)
-        {
-            game.States[i].Started = true;
-            game.World.Balls[i].InPlay = true;
-            game.World.Balls[i].Pos = game.World.Field.StartSpot
-                                    + new Vec2(0, (i - (Balls - 1) / 2.0) * 0.35);
-        }
-
-        // A lawn part way through a game, rather than the opening again.
-        //
-        // Placed clear of each other and of the furniture, and given a course
-        // point somewhere short of finished. Nothing here has to be a position
-        // real play would reach: what makes a label honest is that it is
-        // measured from what the balls actually do NEXT, and they play on from
-        // here under the ordinary rules whatever the arrangement.
-        if (scattered)
-        {
-            for (int i = 0; i < Balls; i++)
-            {
-                game.States[i].Point = dice.Next(0, Math.Max(1, game.States[i].Total - 1));
-
-                for (int tries = 0; tries < 40; tries++)
-                {
-                    var at = new Vec2(spec.BallRadius + dice.NextDouble()
-                                        * (spec.Width - spec.BallRadius * 2),
-                                      spec.BallRadius + dice.NextDouble()
-                                        * (spec.Height - spec.BallRadius * 2));
-
-                    if (Room(game, i, at, spec.BallRadius))
-                    {
-                        game.World.Balls[i].Pos = at;
-                        break;
-                    }
-                }
-            }
-        }
+        Deal(game, dice);
 
         // Half the games are the network against the linear weights, and in
         // those it plays side 0 while side 1 plays the weights alone. The rest
@@ -462,9 +467,40 @@ public static class Positions
     }
 
     /// <summary>Four bytes saying this is a croquet position file.</summary>
-    const int Mark = 0x43524F51;          // "CROQ"
+    public const int Mark = 0x43524F51;          // "CROQ" -- returns
 
-    const int Header = 2 * sizeof(int);
+    /// <summary>
+    /// The same shape of file, holding a different QUANTITY: an advantage,
+    /// centred within its position, rather than a return.
+    ///
+    /// A separate mark because the two are indistinguishable as numbers and
+    /// training on the wrong one produces a net that is confidently wrong --
+    /// which has already cost this project one overnight run. Both are
+    /// readable; what is refused is confusing them.
+    /// </summary>
+    public const int MarkAdvantage = 0x43524F41; // "CROA" -- advantages
+
+    public const int Header = 2 * sizeof(int);
+
+    /// <summary>Stamps a file with its kind and the encoding it was written for.</summary>
+    public static void WriteHeader(BinaryWriter w, int mark)
+    {
+        w.Write(mark);
+        w.Write(Sight.Size);
+    }
+
+    /// <summary>Which kind of file this is, or 0 if it is not one of ours.</summary>
+    public static int MarkOf(string path)
+    {
+        if (!File.Exists(path)) return 0;
+
+        using var file = new FileStream(path, FileMode.Open, FileAccess.Read);
+        using var read = new BinaryReader(file);
+        if (file.Length < Header) return 0;
+
+        int mark = read.ReadInt32();
+        return mark == Mark || mark == MarkAdvantage ? mark : 0;
+    }
 
     /// <summary>How many samples a file holds, or -1 if it is not one of ours.</summary>
     public static int Count(string path)
@@ -475,7 +511,9 @@ public static class Positions
         using var read = new BinaryReader(file);
 
         if (file.Length < Header) return -1;
-        if (read.ReadInt32() != Mark) return -1;
+
+        int mark = read.ReadInt32();
+        if (mark != Mark && mark != MarkAdvantage) return -1;
         if (read.ReadInt32() != Sight.Size) return -1;
 
         long body = file.Length - Header;
@@ -499,7 +537,9 @@ public static class Positions
         using var read = new BinaryReader(file);
 
         if (file.Length < Header) return "the file is too short to be positions";
-        if (read.ReadInt32() != Mark) return "that is not a positions file";
+
+        int mark = read.ReadInt32();
+        if (mark != Mark && mark != MarkAdvantage) return "that is not a positions file";
 
         int wrote = read.ReadInt32();
         if (wrote != Sight.Size)
@@ -531,11 +571,23 @@ public static class Positions
     public static (float[] X, float[] Y) LoadMany(IEnumerable<string> paths)
     {
         var good = new List<string>();
-        int total = 0;
+        int total = 0, kind = 0;
 
         foreach (var p in paths)
         {
             if (Trouble(p) != null) continue;
+
+            // Returns and advantages are different quantities that look
+            // identical as numbers, and a batch holding both would train a net
+            // to predict their average -- which is nothing. Refused rather than
+            // silently averaged.
+            int mark = MarkOf(p);
+            if (kind == 0) kind = mark;
+            else if (mark != kind)
+                throw new InvalidDataException(
+                    "those files hold different kinds of label -- "
+                  + "returns and advantages cannot be learned from together");
+
             good.Add(p);
             total += Count(p);
         }

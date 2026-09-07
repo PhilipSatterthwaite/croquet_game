@@ -633,6 +633,65 @@ is where nearly every real decision is made. The positions need not be ones real
 play would reach; what keeps the labels honest is that play continues from them
 under the ordinary rules.
 
+### Measuring a stroke instead of predicting a position
+
+Three attempts trained a net to predict a POSITION'S worth and all three lost
+nearly every game. The fourth measures a STROKE'S worth, and the difference is
+the whole thing.
+
+The numbers that forced it, all from one run's own log:
+
+| | |
+|---|---|
+| labels vary across positions by | 0.664 points |
+| the net's error on a position it has not seen | 0.551 points |
+| candidates inside ONE turn differ by | 0.068 points |
+
+Its error was **eight times the gap it was being asked to resolve**, so ranking
+candidates on it was close to drawing lots -- and it went 0 from 78. That
+ceiling is in the LABEL and not the model: one rollout of a six-player game is
+that variable, and no amount of capacity or epochs fits noise. A bigger net
+would have hit exactly the same floor.
+
+`Rollouts` measures the difference directly. From one root position it plays
+EVERY candidate stroke, then lets the same players carry on from each of them
+with the **same seeds** -- common random numbers. The only thing differing
+between those futures is the stroke, so most of the luck is shared and cancels.
+
+Then it **subtracts the mean of the group**, and that is the step that matters.
+The baseline it removes -- which side is ahead, how far round everybody is -- is
+identical for every candidate in the turn, so it was never anything but
+nuisance, and it is precisely the 0.664 that drowned the previous three
+attempts. What is left is centred on zero and is the size of the decision: how
+much better this stroke is than the others available from here. That is the
+only question the search ever asks.
+
+Twelve strokes of real play, not to the peg, and that is arithmetic rather than
+a compromise: at `Fade` 0.88 the first twelve carry 78% of all the weight there
+will ever be and everything past twenty-five carries 4%. The tail is
+bootstrapped from the net, so even that is not discarded -- and playing to the
+end instead would cost fifteen times as much for the last few per cent of a
+number that is mostly other people's luck.
+
+```sh
+dotnet run --project tools/Croquet.Train -c Release -- cycle --rollouts \
+    --generations 2 --games 1500
+```
+
+The main line is played by the **linear weights**, for the same reason half the
+ordinary collection spars them: six copies of an unproven net wander for six
+hundred strokes without finishing, and a root drawn from that is a position no
+real game reaches.
+
+An advantage file carries a different magic mark (`CROA`) from a returns file
+(`CROQ`), and `LoadMany` refuses a batch holding both. They are indistinguishable
+as numbers and a net trained on their average would be confidently wrong --
+which has already cost this project one overnight run once.
+
+The blend ladder for a ranking run includes **zero**, meaning the net alone.
+That is the point of the exercise: an advantage net is built to choose between
+strokes without help, and the sweep is how we find out whether it can yet.
+
 ### The search knows whose hand it is
 
 Every candidate is first played **perfectly**, which makes a thirty-metre roquet

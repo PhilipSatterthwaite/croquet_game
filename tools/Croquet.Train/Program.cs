@@ -220,6 +220,15 @@ switch (command)
         double explore = Real("explore", 0.2);
         double blend = Real("blend", 1.0);
 
+        // Which kind of label this run produces. Rollouts measure every
+        // candidate from one position under matched conditions and keep the
+        // DIFFERENCE; the default measures one return per position and keeps
+        // that. See Rollouts for why the difference is the whole game.
+        bool ranking = Array.IndexOf(args, "--rollouts") >= 0;
+        Rollouts.Candidates = Num("candidates", 8);
+        Rollouts.Horizon = Num("horizon", 12);
+        Rollouts.RootEvery = Num("every", 20);
+
         // Both namable, because they were not and a smoke run wrote its
         // sixteen-game files over an overnight collection under the same fixed
         // names. Per-generation nets now land beside whatever --out names
@@ -261,9 +270,11 @@ switch (command)
                           $"{Positions.Scatter * 100:0}% of games start scattered, " +
                           $"{explore * 100:0}% of strokes explore, " +
                           $"{Positions.AgainstWeights * 100:0}% spar the weights");
-        Console.WriteLine(blend > 0
-            ? $"judged as a blend: the weights plus {blend:0.##} hoops a point of net"
-            : "judged on the net alone");
+        Console.WriteLine(ranking
+            ? $"ROLLOUTS: {Rollouts.Candidates} candidates a root, "
+            + $"{Rollouts.Horizon} strokes each, a root every {Rollouts.RootEvery}"
+            + " -- labels are centred advantages"
+            : "labels are discounted returns");
         Console.WriteLine(best == null
             ? "starting from the linear weights -- generation 1 learns from their games\n"
             : $"starting from {Path.GetFileName(bestPath)}\n");
@@ -281,17 +292,23 @@ switch (command)
             pattern.NetBlend = blend;               // mixed with them, not replacing
             pattern.Explore = explore;              // and it tries things
 
-            string data = Path.Combine(dataDir, $"positions-gen{g}.bin");
+            string stem = ranking ? "advantage" : "positions";
+            string data = Path.Combine(dataDir, $"{stem}-gen{g}.bin");
             var clock = Stopwatch.StartNew();
 
-            int kept = Positions.Collect(data, games, 7_000 + g * 100_000, pattern,
-                stop.Token, (done, of) =>
-                {
-                    if (done % 8 != 0 && done != of) return;
-                    var left = TimeSpan.FromSeconds(
-                        clock.Elapsed.TotalSeconds / done * (of - done));
-                    Console.Write($"\r  playing {done}/{of}   ~{left.TotalMinutes:0}m left    ");
-                });
+            void Tick(int done, int of)
+            {
+                if (done % 8 != 0 && done != of) return;
+                var left = TimeSpan.FromSeconds(
+                    clock.Elapsed.TotalSeconds / done * (of - done));
+                Console.Write($"\r  playing {done}/{of}   ~{left.TotalMinutes:0}m left    ");
+            }
+
+            int kept = ranking
+                ? Rollouts.Collect(data, games, 7_000 + g * 100_000, latest,
+                                   stop.Token, Tick)
+                : Positions.Collect(data, games, 7_000 + g * 100_000, pattern,
+                                    stop.Token, Tick);
 
             if (stop.IsCancellationRequested) { Console.WriteLine(); break; }
             Console.WriteLine($"\r  {kept:N0} positions in " +
@@ -301,7 +318,7 @@ switch (command)
             var batch = new List<string>();
             for (int back = 0; back < keep; back++)
                 if (g - back >= 1)
-                    batch.Add(Path.Combine(dataDir, $"positions-gen{g - back}.bin"));
+                    batch.Add(Path.Combine(dataDir, $"{stem}-gen{g - back}.bin"));
 
             var (px, py) = Positions.LoadMany(batch);
 
@@ -346,7 +363,12 @@ switch (command)
             // took 34,000 games to tune. Measured on the same seeds each time,
             // so the comparison is between blends and not between draws.
             // Roughly 6 minutes a rung against a couple of hours of collection.
+            // Zero is in the ladder for a ranking run, because an advantage
+            // net is BUILT to choose between strokes on its own -- that is the
+            // whole object -- and the sweep is how we find out whether it can
+            // yet. A returns net never could, and starts quiet.
             var ladder = Arg("blend", "") != "" ? new[] { blend }
+                       : ranking                ? new[] { 0.0, 0.5, 2.0 }
                                                 : new[] { 0.15, 0.35, 0.8 };
 
             Duel.Result outcome = default;
@@ -436,6 +458,7 @@ switch (command)
 
               time                      how long a self-play game takes
               cycle --generations N     play, learn, measure, promote, repeat
+              cycle --rollouts          ...measuring every candidate instead
               collect --games N         self-play positions, labelled
               learn --epochs N          fit the value net to them
               netmatch [file]           the net against the learned weights

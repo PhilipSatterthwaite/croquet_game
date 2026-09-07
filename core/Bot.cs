@@ -610,6 +610,41 @@ namespace Croquet.Core
         List<(BotMove Move, double Score, Game After)> ranked;
 
         /// <summary>
+        /// The best few strokes it can see, best first -- not just the one it
+        /// would play.
+        ///
+        /// For measuring what a stroke is worth by playing it out, which needs
+        /// several plausible strokes from one position rather than one. They
+        /// come from the same search the bot uses to choose, so they are
+        /// strokes a player might really consider; a random sample of angles
+        /// and strengths would spend nearly all of a very expensive measurement
+        /// on shots nobody would play.
+        ///
+        /// Near-duplicates are already skipped upstream when the level has a
+        /// hand, so these are different IDEAS rather than one shot at eight
+        /// strengths -- which is the whole point when the object is to find out
+        /// which idea is best.
+        /// </summary>
+        public List<BotMove> Shortlist(Game game, int k)
+        {
+            var picked = new List<BotMove>();
+            if (k <= 0) return picked;
+
+            Search(game, Lookahead, out _);
+            if (ranked == null) return picked;
+
+            var pool = new List<(BotMove Move, double Score, Game After)>(ranked);
+            pool.Sort((a, b) => b.Score.CompareTo(a.Score));
+
+            foreach (var e in pool)
+            {
+                if (picked.Count >= k) break;
+                picked.Add(e.Move);
+            }
+            return picked;
+        }
+
+        /// <summary>
         /// What a stroke is actually worth to a player with this hand: the mean
         /// of playing it several times with the error on, plus the clean score
         /// as one more sample so a shot with real upside is not written off for
