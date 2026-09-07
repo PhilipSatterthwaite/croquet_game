@@ -1,0 +1,24 @@
+# Learned by tools/Croquet.Train: weight sets played against each
+# other, fitness is games won. See core/BotWeights.cs for what
+# each of these means.
+
+hoop = 1200
+partnerScored = 1664.5877
+opponentScored = 2907.492
+peggedOut = 10629.0444
+roquet = 640.1942
+turnEnded = 469.4178
+wentOut = 1390.3692
+toPoint = 39.4927
+inFront = 1127.0307
+inFrontDepth = 5.6507
+inFrontWidth = 0.9606
+toNearest = 24.0422
+nearestCap = 12.3771
+partnerCloser = 101.388
+opponentCloser = 62.589
+shoveCap = 1.891
+partnerSentOff = 985.5217
+wastedShot = 674.1528
+edgeBand = 0.5246
+edgePenalty = 326.2403
