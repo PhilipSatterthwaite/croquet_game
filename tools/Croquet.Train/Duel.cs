@@ -24,7 +24,7 @@ public static class Duel
     public static bool? Play(BotWeights a, BotWeights b, int seed, bool swap,
                              int balls = 4, int maxStrokes = 600,
                              CancellationToken quit = default, Net net = null,
-                             bool solo = false)
+                             bool solo = false, double blend = 1.0)
     {
         var spec = new CourtSpec
         {
@@ -74,8 +74,15 @@ public static class Duel
             bots[i].Weights = mine ? a : b;
 
             // A net given here plays for side A only, so the series is the net
-            // against the weights rather than against itself.
-            if (net != null && mine) bots[i].Net = net;
+            // against the weights rather than against itself. At a blend above
+            // zero side A is the weights PLUS the net, which is the comparison
+            // that matters: does the network add anything to what is already
+            // there, rather than can it replace it single-handed.
+            if (net != null && mine)
+            {
+                bots[i].Net = net;
+                bots[i].NetBlend = blend;
+            }
         }
 
         int strokes = 0;
@@ -126,7 +133,7 @@ public static class Duel
     public static Result Series(BotWeights a, BotWeights b, int games, int fromSeed,
                                 int balls = 4, CancellationToken quit = default,
                                 Action<int, int>? played = null, Net net = null,
-                                bool solo = false)
+                                bool solo = false, double blend = 1.0)
     {
         int pairs = Math.Max(1, games / 2);
         var outcomes = new bool?[pairs * 2];
@@ -141,7 +148,7 @@ public static class Duel
             Parallel.For(0, pairs * 2, new ParallelOptions { CancellationToken = quit }, g =>
             {
                 outcomes[g] = Play(a, b, fromSeed + g / 2, swap: g % 2 == 1, balls,
-                                   quit: quit, net: net, solo: solo);
+                                   quit: quit, net: net, solo: solo, blend: blend);
                 played?.Invoke(Interlocked.Increment(ref done), pairs * 2);
             });
         }

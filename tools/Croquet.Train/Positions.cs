@@ -75,6 +75,27 @@ public static class Positions
     /// </summary>
     public static double Scatter = 0.5;
 
+    /// <summary>
+    /// Share of games played against the linear weights rather than against
+    /// more copies of the network.
+    ///
+    /// Pure self-play is the textbook answer and it went badly here, for a
+    /// reason the numbers made plain: generation two averaged 706 kept
+    /// positions a game against a ceiling of 720, meaning virtually every game
+    /// ran to the six-hundred-stroke cap without anybody finishing. Six copies
+    /// of a mediocre network flail, and a network learned from flailing learns
+    /// what flailing is worth. The linear weights finish a game in about 230
+    /// strokes.
+    ///
+    /// So half the games are played against them. Those games end, they contain
+    /// breaks and hoops and real endgames, and they give the network positions
+    /// from competent croquet to have an opinion about. The other half stay
+    /// pure self-play, because that is where anything BETTER than the weights
+    /// can come from -- a network that only ever sees their games can only ever
+    /// learn their judgement.
+    /// </summary>
+    public static double AgainstWeights = 0.5;
+
     /// <summary>Every nth stroke is kept. Consecutive positions are nearly the
     /// same position, and a hundred copies of one lawn is one example.</summary>
     const int Every = 5;
@@ -162,6 +183,12 @@ public static class Positions
         write.Write(Mark);
         write.Write(Sight.Size);
 
+        // The net that is PLAYING is also the one that finishes the labels, and
+        // it is held fixed for the whole collection -- a target network. Letting
+        // the labels chase a net that is moving is the standard way to make this
+        // diverge.
+        var boot = pattern.Net;
+
         var pen = new object();
         int kept = 0, done = 0;
 
@@ -172,12 +199,18 @@ public static class Positions
 
             if (PlayOne(fromSeed + g, pattern, seen, ledger, quit))
             {
+                // Worked out before the lock, because scoring a position
+                // through the network is the expensive part and holding the
+                // pen while every thread does it would serialise the run.
+                var labels = new float[seen.Count];
+                for (int j = 0; j < seen.Count; j++) labels[j] = Label(seen, ledger, j, boot);
+
                 lock (pen)
                 {
-                    foreach (var (x, who, at) in seen)
+                    for (int j = 0; j < seen.Count; j++)
                     {
-                        foreach (float v in x) write.Write(v);
-                        write.Write((float)Ahead(ledger, at, who, Sides()));
+                        foreach (float v in seen[j].X) write.Write(v);
+                        write.Write(labels[j]);
                         kept++;
                     }
                 }
@@ -210,11 +243,63 @@ public static class Positions
     /// -- where it is one of me and five of them -- lands on the same scale as
     /// three a side rather than teaching a bot that everything is hopeless.
     /// </summary>
-    static double Ahead(List<double[]> ledger, int at, int who, int[] sides)
+    /// <summary>
+    /// What one kept position is worth: a few strokes of what really happened,
+    /// then the network's own opinion of where that left things.
+    ///
+    /// This is the fix for the measurement that sank the last run. A label that
+    /// sums thirty-odd strokes of a six-player game is one sample of something
+    /// enormously variable -- the network fitted it to a held-back error of
+    /// 0.55 points and could get no closer, because 0.55 IS roughly the noise.
+    /// Meanwhile the candidates it has to choose between inside a single turn
+    /// differ by about 0.07. Ranking them with a judge whose error is eight
+    /// times the gap is close to drawing lots, and no amount of capacity or
+    /// epochs helps: the ceiling is in the label, not the model.
+    ///
+    /// Bootstrapping cuts the variance instead. Five strokes of real outcome
+    /// carry most of what a stroke actually caused, and everything past that is
+    /// replaced by one number the network already believes -- so the noise of
+    /// twenty-five further strokes of other people's luck never enters the
+    /// label at all.
+    ///
+    /// With no net -- the first generation -- there is nothing to bootstrap
+    /// from and it falls back to the full discounted return.
+    /// </summary>
+    static float Label(List<(float[] X, int Who, int At)> seen,
+                       List<double[]> ledger, int j, Net boot)
+    {
+        var (_, who, at) = seen[j];
+        var sides = Sides();
+
+        // The same viewpoint's next kept position is exactly Balls further on,
+        // because every kept stroke is written once per ball in ball order.
+        int next = j + Balls;
+
+        if (boot == null || next >= seen.Count)
+            return (float)Ahead(ledger, at, who, sides, 0);
+
+        var x = new double[Sight.Size];
+        var from = seen[next].X;
+        for (int i = 0; i < Sight.Size; i++) x[i] = from[i];
+
+        return (float)(Ahead(ledger, at, who, sides, Every)
+                     + Math.Pow(Fade, Every) * boot.Value(x));
+    }
+
+    /// <summary>
+    /// <paramref name="horizon"/> strokes of it, or all of it when zero.
+    ///
+    /// A short horizon is only half a label -- the rest is what the position is
+    /// worth at the end of it, which the network itself supplies. See
+    /// <see cref="Collect"/>.
+    /// </summary>
+    static double Ahead(List<double[]> ledger, int at, int who, int[] sides,
+                        int horizon)
     {
         double sum = 0, weight = 1;
+        int end = horizon > 0 ? Math.Min(ledger.Count, at + horizon) : ledger.Count;
 
-        for (int i = at; i < ledger.Count; i++)
+        for (int i = at; i < end; i++)
         {
             var gains = ledger[i];
 
@@ -231,7 +316,7 @@ public static class Positions
             sum += weight * (mine / Math.Max(1, ours) - theirs / Math.Max(1, them));
 
             weight *= Fade;
-            if (weight < 0.01) break;          // past here it cannot matter
+            if (horizon <= 0 && weight < 0.01) break;   // past here it cannot matter
         }
 
         return sum;
@@ -304,9 +389,16 @@ public static class Positions
             }
         }
 
+        // Half the games are the network against the linear weights, and in
+        // those it plays side 0 while side 1 plays the weights alone. The rest
+        // are the network against itself. See AgainstWeights.
+        bool sparring = pattern.Net != null && dice.NextDouble() < AgainstWeights;
+
         var bots = new Bot[Balls];
         for (int i = 0; i < Balls; i++)
         {
+            bool netPlays = !sparring || i % 2 == 0;
+
             bots[i] = new Bot(seed * 131 + i * 17)
             {
                 Lookahead = pattern.Lookahead,
@@ -319,7 +411,8 @@ public static class Positions
                 PowerError = pattern.PowerError,
                 RangeError = pattern.RangeError,
                 Weights = pattern.Weights,
-                Net = pattern.Net,
+                Net = netPlays ? pattern.Net : null,
+                NetBlend = pattern.NetBlend,
                 Explore = pattern.Explore,
                 ExploreTop = pattern.ExploreTop
             };

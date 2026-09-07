@@ -11,6 +11,9 @@ dotnet test --filter Roquet        # one test or one class
 
 play croquet                       # the playable lab, opens localhost:5055
 ./play.ps1 --no-open               # the same, without a browser
+
+./android.ps1                      # build the apk and put it on the phone
+./android.ps1 -Devices             # what adb can see
 ```
 
 `play croquet` works from any directory. It is a `play` function in the user's
@@ -43,6 +46,7 @@ shape for online play and for the AI's search.
 | `tools/Croquet.Train/` | dev-only. Learns the bot's judgement by self-play. Never ships |
 | `weights/` | what training produced. Text, readable, meant to be argued with |
 | `play.ps1` | launches the lab; what `play croquet` calls |
+| `android.ps1` | builds the apk and installs it on a plugged-in phone |
 | `unity/` | the Unity project — rendering, input, UI, audio |
 
 `core/` is not copied into `unity/`. It carries a `package.json` and an
@@ -1006,6 +1010,76 @@ across the **shorter** side of the screen, not the height. On a portrait view a
 2:1 court is fitted by its width, which makes the view very tall — and a mallet
 head that was a fixed share of that came out four times the size of the ball it
 was addressing.
+
+### Onto a phone
+
+`./android.ps1` builds the player and installs it, and there is nothing to set
+up around it: the Android SDK, the NDK, a JDK and `adb` all ship inside the
+editor's `AndroidPlayer` module, so the script finds them there rather than
+asking for an `ANDROID_HOME` that would then be one more thing able to be
+wrong. The phone needs developer options and USB debugging on, and a cable that
+carries data.
+
+It builds **ARM64 and IL2CPP**, asserted in `AndroidBuild` and not merely left
+sitting in the project settings, because a build that quietly came out ARMv7
+and Mono would be measuring a runtime the game will never ship on — which is
+most of the reason to put it on hardware at all. `-Release` drops the
+development player; the default keeps it, so the profiler and the log can
+attach. Unity signs with its own debug keystore, which is all a sideload needs.
+
+The device is checked **before** the build, not after: IL2CPP compiles the whole
+game to C++ and then to ARM64, and finding out at the end of that that the cable
+was a charging cable is minutes gone.
+
+**Getting adb and the phone into the same place is most of the work**, and all
+three ways of doing it fail in ways that look like something else. `-Cable`,
+`-Pair`/`-Connect` and a plain sideload are the three, and the script exists as
+much to tell them apart as to build anything.
+
+- **`-Cable` asks the USB bus rather than the eye.** A charge-only cable is
+  indistinguishable from a working one: the phone charges from it, so the cable
+  is visibly fine, and Windows enumerates *nothing at all*, which reads as a
+  driver fault or a phone still missing a setting. Watching for a USB device to
+  appear separates the two in ten seconds, and it is sound because adb's
+  interface is exposed whenever USB debugging is on, whatever file-transfer mode
+  the phone is in.
+- **`-Pair` / `-Connect` are Android 11's wireless debugging**, and adb hands
+  back the same kind of device either way, so nothing downstream knows which
+  transport it is on. Pairing and connecting use **different ports**: pairing's
+  lives only inside its dialog, and the connect port changes on every reboot, so
+  `-Pair` is once and `-Connect` is occasionally again. The address is
+  `<ip>:<port>` and typing the separator as another dot gets `protocol fault
+  (couldn't read status message)` out of adb, which sends you to look at the
+  network; the script checks the shape first for that reason.
+- **On a university network this will not work at all**, and it is worth
+  recognising quickly rather than debugging: eduroam put the laptop on
+  `10.50.64.13/15` and the phone on `10.40.64.44`, which are different subnets
+  with no route between them. A phone hotspot the laptop joins fixes it by
+  making one network out of the two.
+
+When none of that is available, `-NoInstall` leaves an apk in `build/android/`
+that can travel by Drive or email and be installed from the phone's file
+manager. That loses `logcat`, and with it the determinism report — but the game
+runs, which is the point.
+
+**Orientation had to be fixed to match the claim above.** The player settings
+allowed all four orientations, so a phone would have rotated the game into the
+portrait band this document says does not exist. Only the two landscape
+autorotations are allowed now.
+
+**This is where the IL2CPP determinism question finally gets answered.** The
+check was under `Assets/Editor/`, which is an assembly no player contains — so
+the one runtime whose agreement was unmeasured was the one runtime it could
+never reach. `Determinism.Report()` is in the runtime assembly now,
+`DeterminismCheck` is the menu item that calls it, and `StartMenu` logs it once
+on launch. `adb logcat Unity:V "*:S"` carries the answer off the phone; it
+should say `0x91CC2FA93F2FA2DC`, the number CoreCLR and Mono already agree on.
+
+Not yet done for touch: `AimControl.Look` is the only place that still needs a
+`Mouse`, so a device has no zoom and no pan — there is no pinch gesture. Aiming
+itself goes through `Pointer.current`, which is the touchscreen on a phone, so
+the stroke works. The Android back button arrives as Escape and opens the pause
+menu.
 
 ### Two traps, both already sprung
 

@@ -32,6 +32,12 @@ public class StartMenu : MonoBehaviour
 
     void Awake()
     {
+        // Eight strokes of a pinned match, once, before anything is on screen.
+        // It costs a millisecond and it is the only way the IL2CPP answer ever
+        // gets measured -- there is no IL2CPP in an editor. `adb logcat` carries
+        // it off a phone. See Determinism.
+        Debug.Log(Determinism.Report());
+
         Build();
         Refresh();
     }

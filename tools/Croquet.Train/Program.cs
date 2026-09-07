@@ -167,8 +167,14 @@ switch (command)
             break;
         }
 
+        double blend = Real("blend", 1.0);
+        Positions.Teams = Num("teams", 2);
+
         Console.WriteLine($"{Path.GetFileName(netPath)} vs the learned weights, " +
-                          $"{games} games\n");
+                          $"{games} games");
+        Console.WriteLine(blend > 0
+            ? $"side A is the weights PLUS {blend:0.##} hoops a point of net\n"
+            : "side A is the net alone\n");
 
         var watch = Stopwatch.StartNew();
         // The same shape the net was trained on: six balls, every one for
@@ -176,7 +182,7 @@ switch (command)
         // game it has never seen.
         var outcome = Duel.Series(BotWeights.Default, BotWeights.Default, games,
                                   500_000, Positions.Balls, default, null, net,
-                                  solo: true);
+                                  solo: Positions.Teams < 2, blend: blend);
         watch.Stop();
 
         Console.WriteLine($"{outcome}   in {watch.Elapsed.TotalSeconds:0}s");
@@ -210,9 +216,16 @@ switch (command)
         Positions.Teams = Num("teams", 2);
         Positions.WinBonus = Real("win", 2.0);
         Positions.Scatter = Real("scatter", 0.5);
+        Positions.AgainstWeights = Real("spar", 0.5);
         double explore = Real("explore", 0.2);
+        double blend = Real("blend", 1.0);
 
-        string dataDir = Path.Combine(Root(), "data");
+        // Both namable, because they were not and a smoke run wrote its
+        // sixteen-game files over an overnight collection under the same fixed
+        // names. Per-generation nets now land beside whatever --out names
+        // rather than always in weights/, so a throwaway run is throwaway all
+        // the way through.
+        string dataDir = Arg("data", Path.Combine(Root(), "data"));
         string bestPath = Arg("out", Path.Combine(Root(), "weights", "net.txt"));
         Directory.CreateDirectory(dataDir);
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(bestPath))!);
@@ -234,7 +247,7 @@ switch (command)
         // the baseline on its way past it.
         var best = File.Exists(bestPath) ? Net.FromText(File.ReadAllText(bestPath)) : null;
         var latest = best;
-        double bestRate = 0;
+        double bestRate = 0, bestAt = 0;
 
         Console.WriteLine($"{generations} generations, {games} games each, " +
                           $"learning from the last {keep}");
@@ -246,7 +259,11 @@ switch (command)
             : "cutthroat; reward is my points less the average of the rest");
         Console.WriteLine($"winning adds {Positions.WinBonus:0.#} -- " +
                           $"{Positions.Scatter * 100:0}% of games start scattered, " +
-                          $"{explore * 100:0}% of strokes explore");
+                          $"{explore * 100:0}% of strokes explore, " +
+                          $"{Positions.AgainstWeights * 100:0}% spar the weights");
+        Console.WriteLine(blend > 0
+            ? $"judged as a blend: the weights plus {blend:0.##} hoops a point of net"
+            : "judged on the net alone");
         Console.WriteLine(best == null
             ? "starting from the linear weights -- generation 1 learns from their games\n"
             : $"starting from {Path.GetFileName(bestPath)}\n");
@@ -261,6 +278,7 @@ switch (command)
             // ---- play ----
             var pattern = Bot.Casual();
             pattern.Net = latest;                   // null plays the linear weights
+            pattern.NetBlend = blend;               // mixed with them, not replacing
             pattern.Explore = explore;              // and it tries things
 
             string data = Path.Combine(dataDir, $"positions-gen{g}.bin");
@@ -287,9 +305,14 @@ switch (command)
 
             var (px, py) = Positions.LoadMany(batch);
 
+            // Three, not ten. Held-back error was best at epoch ONE in the last
+            // run and rose every epoch after it -- nine tenths of the training
+            // time was spent memorising games. The positions are far more
+            // correlated than their count suggests: six viewpoints of the same
+            // lawn, and every fifth stroke of the same game.
             var fit = new Learn
             {
-                Epochs = Num("epochs", 10),
+                Epochs = Num("epochs", 3),
                 Batch = Num("batch", 256),
                 Rate = Real("rate", 0.002)
             };
@@ -301,7 +324,9 @@ switch (command)
             var trained = fit.Fit(latest ?? Net.Fresh(g), px, py, stop.Token,
                                   s => Console.WriteLine("  " + s));
 
-            string genPath = Path.Combine(Root(), "weights", $"net-gen{g}.txt");
+            string genPath = Path.Combine(
+                Path.GetDirectoryName(Path.GetFullPath(bestPath))!,
+                Path.GetFileNameWithoutExtension(bestPath) + $"-gen{g}.txt");
             File.WriteAllText(genPath, trained.ToText());
             latest = trained;
 
@@ -314,20 +339,49 @@ switch (command)
             // for a partner, measured in a free-for-all, is being asked about a
             // game it has never seen -- and would look bad for a reason that is
             // nothing to do with how well it learned.
-            var outcome = Duel.Series(BotWeights.Default, BotWeights.Default, judged,
-                                      900_000 + g * 10_000, Positions.Balls,
-                                      stop.Token, null, trained,
-                                      solo: Positions.Teams < 2);
+            //
+            // Swept over how loudly the network speaks, because that is one
+            // free number and there is no way to reason it out: too quiet and
+            // it changes nothing, too loud and its noise drowns weights that
+            // took 34,000 games to tune. Measured on the same seeds each time,
+            // so the comparison is between blends and not between draws.
+            // Roughly 6 minutes a rung against a couple of hours of collection.
+            var ladder = Arg("blend", "") != "" ? new[] { blend }
+                                                : new[] { 0.15, 0.35, 0.8 };
 
-            Console.WriteLine($"  generation {g}: {outcome}");
+            Duel.Result outcome = default;
+            double rate = 0, chosen = ladder[0];
+
+            foreach (double b in ladder)
+            {
+                if (stop.IsCancellationRequested) break;
+
+                var round = Duel.Series(BotWeights.Default, BotWeights.Default, judged,
+                                        900_000 + g * 10_000, Positions.Balls,
+                                        stop.Token, null, trained,
+                                        solo: Positions.Teams < 2, blend: b);
+
+                Console.WriteLine($"  blend {b,4:0.##}: {round}");
+                if (round.Rate > rate) { rate = round.Rate; chosen = b; outcome = round; }
+            }
+
+            Console.WriteLine($"  generation {g} at its best blend " +
+                              $"({chosen:0.##}): {outcome}");
             Console.WriteLine("  " + Wilson(outcome));
 
-            if (outcome.Rate > bestRate && outcome.Rate > 0.5)
+            if (rate > bestRate && rate > 0.5)
             {
-                bestRate = outcome.Rate;
+                bestRate = rate;
+                bestAt = chosen;
                 best = trained;
                 File.WriteAllText(bestPath, trained.ToText());
-                Console.WriteLine($"  promoted -> {bestPath}\n");
+
+                // The blend is half of what was promoted -- a net without the
+                // number saying how loudly to read it is not a usable bot.
+                File.WriteAllText(Path.ChangeExtension(bestPath, ".blend"),
+                                  chosen.ToString("0.###") + "\n");
+
+                Console.WriteLine($"  promoted -> {bestPath} at blend {chosen:0.##}\n");
             }
             else
             {
@@ -337,8 +391,8 @@ switch (command)
         }
 
         Console.WriteLine(bestRate > 0
-            ? $"best generation played {bestRate * 100:0.0}% against the weights " +
-              $"-- {bestPath}"
+            ? $"best generation played {bestRate * 100:0.0}% against the weights "
+            + $"at blend {bestAt:0.##} -- {bestPath}"
             : "no generation beat the linear weights; nothing promoted");
         Console.WriteLine($"total {whole.Elapsed.TotalHours:0.0}h");
         break;

@@ -580,7 +580,15 @@ namespace Croquet.Core
                     // never deepened -- the game being over -- so anything above
                     // 0.25 outranked winning and the bot could not close out.
                     // Three hundred games, no wins, from one plus sign.
-                    scored[i] = (m, Net != null ? follow : s + follow * 0.75, after);
+                    //
+                    // A BLEND is a reward again, and adds. Most of it is
+                    // Evaluate, which is a reward; the network's share is a
+                    // small correction on top and is bounded, so treating the
+                    // whole as a reward double-counts a little of the future
+                    // rather than unboundedly. Only the pure-value mode
+                    // replaces.
+                    bool pureValue = Net != null && NetBlend <= 0;
+                    scored[i] = (m, pureValue ? follow : s + follow * 0.75, after);
                     done++;
                 }
             }
@@ -948,9 +956,38 @@ namespace Croquet.Core
         /// for both. Swapping a hand-built evaluator for a learned one should
         /// not be a change to the search, and here it is not.
         /// </summary>
-        double Judge(Game before, Game after, StrokeResult r, int me) =>
-            Net != null ? Net.Value(after, me)
-                        : Evaluate(before, after, r, me, Weights);
+        double Judge(Game before, Game after, StrokeResult r, int me)
+        {
+            if (Net == null) return Evaluate(before, after, r, me, Weights);
+            if (NetBlend <= 0) return Net.Value(after, me);
+
+            // The two together, in the weights' units: one point of the
+            // network's opinion is worth NetBlend hoops.
+            return Evaluate(before, after, r, me, Weights)
+                 + NetBlend * Weights.Hoop * Net.Value(after, me);
+        }
+
+        /// <summary>
+        /// How much of the network's opinion to mix into the hand-built one,
+        /// measured in hoops per point.
+        ///
+        /// Zero uses the network ALONE, which is what the first three attempts
+        /// did and what they kept losing with. The reason is measurable rather
+        /// than mysterious: across 144 strokes from one position the weights
+        /// separate the candidates by three thousand points and the network by
+        /// about half of one, while its own error on a position it has not seen
+        /// is eight times that half. Asked to rank strokes on its own it is
+        /// mostly reading its own noise.
+        ///
+        /// Mixed, the two do the jobs each is actually good at. The weights are
+        /// coarse but reliable and settle the ordering; the network moves
+        /// candidates the weights think are equivalent, which is exactly where
+        /// layout-dependent judgement lives and exactly what twenty linear
+        /// terms cannot express. A correction has to be much smaller than the
+        /// thing it corrects, and at one hoop a point this contributes about a
+        /// sixth of the spread.
+        /// </summary>
+        public double NetBlend = 1.0;
 
         /// <summary>Are these two balls on the same side? Cutthroat: only itself.</summary>
         public static bool SameSide(Game g, int a, int b) =>
