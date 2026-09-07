@@ -195,6 +195,13 @@ namespace Croquet.Core
                 Winner = Winner
             };
             World.Balls.CopyTo(g.World.Balls, 0);
+
+            // Which side of each hoop every ball is on. Without this a clone
+            // starts as though no ball had ever been near a hoop, and a ball
+            // sitting in the jaws could never be scored out of them -- so the
+            // bot would never see the stroke that finishes running it.
+            World.CopySidesTo(g.World);
+
             for (int i = 0; i < States.Length; i++) g.States[i] = States[i].Clone();
             return g;
         }

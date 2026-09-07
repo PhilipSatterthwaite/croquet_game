@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Croquet.Core
@@ -22,6 +23,27 @@ namespace Croquet.Core
         /// <summary>[ball, hoop] net signed crossings since the last ClearShot.</summary>
         public readonly int[,] Passes;
 
+        /// <summary>
+        /// [ball, hoop] which side of each hoop a ball was last definitely on:
+        /// -1 for the low-x side, +1 for the high-x side, 0 for never yet.
+        ///
+        /// This is the "jaws" of the wicket, and it is the whole reason the
+        /// state has to persist between strokes. A hoop is not a plane, it is a
+        /// gap with thickness, and a ball can stop inside it -- ball C in the
+        /// USCA diagram, which has NOT scored. Being in the jaws is neither
+        /// side, so it changes nothing here; the ball keeps the side it came
+        /// from until it fully clears one or the other.
+        ///
+        /// That gives the rules for free. Stopping in the jaws scores nothing
+        /// now and scores properly on the stroke that carries the ball out.
+        /// Going part of the way back and forward again scores nothing, because
+        /// the side never changed. And "if a ball travels backwards through its
+        /// wicket to get position, it must be clear of the non-playing side to
+        /// then score the wicket in the correct direction" is simply what
+        /// having to change sides means.
+        /// </summary>
+        public readonly int[,] Side;
+
         /// <summary>Everything that happened this shot, in the order it happened.</summary>
         public readonly List<ShotEvent> Events = new List<ShotEvent>();
 
@@ -39,6 +61,7 @@ namespace Croquet.Core
             Field = field;
             Spec = spec;
             Passes = new int[balls.Length, field.Hoops.Length];
+            Side = new int[balls.Length, field.Hoops.Length];
             touched = new bool[balls.Length, balls.Length];
         }
 
@@ -77,14 +100,48 @@ namespace Croquet.Core
         /// Did this ball run the hoop for this course point during the shot?
         /// The point carries the direction, which is what stops a ball coming
         /// home through hoop 2 from being credited with hoop 13.
+        ///
+        /// Two things have to hold, and they are different things. The ball has
+        /// to have changed sides the right way during the stroke -- and it has
+        /// to be sitting clear at the end of it, because "if a ball passes
+        /// through a wicket but rolls back, it has not scored the wicket".
         /// </summary>
         public bool RanPoint(int ball, int point)
         {
             int hoop = Field.HoopFor(point);
             if (hoop < 0) return false;                 // pegs are hit, not run
+
             int dir = Field.DirectionFor(point);
-            return dir > 0 ? Passes[ball, hoop] > 0
-                           : Passes[ball, hoop] < 0;
+            bool crossed = dir > 0 ? Passes[ball, hoop] > 0
+                                   : Passes[ball, hoop] < 0;
+
+            return crossed && Clear(ball, hoop, dir);
+        }
+
+        /// <summary>
+        /// Whether the ball is entirely past the far face of the hoop -- not
+        /// touching it, not in the jaws. Ball D in the USCA diagram rather than
+        /// ball C.
+        /// </summary>
+        public bool Clear(int ball, int hoop, int dir)
+        {
+            var h = Field.Hoops[hoop];
+            double deep = dir * (Balls[ball].Pos.X - h.Center.X);
+            return deep > h.WireRadius + Spec.BallRadius;
+        }
+
+        /// <summary>
+        /// Hands the jaws state to a copy of this world.
+        ///
+        /// Game.Clone builds a fresh World, which would otherwise start every
+        /// ball as never having been near a hoop -- and a bot searching from a
+        /// position with a ball sitting in the jaws would conclude it could
+        /// never score it.
+        /// </summary>
+        public void CopySidesTo(World other)
+        {
+            if (other == null) return;
+            Array.Copy(Side, other.Side, Side.Length);
         }
 
         /// <summary>

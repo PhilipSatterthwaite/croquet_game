@@ -210,32 +210,69 @@ namespace Croquet.Core
         }
 
         /// <summary>
-        /// Tallies signed crossings of each hoop's plane. Only a crossing that
-        /// happens BETWEEN the uprights counts, which is what separates running
-        /// a hoop from rolling past the outside of it; and the sign is what
-        /// makes a ball that goes through and comes straight back out score
-        /// nothing, because the two cancel.
+        /// Follows which side of each hoop a ball is on, and notes the moment
+        /// it changes.
+        ///
+        /// A hoop is a gap with THICKNESS, not a plane. A ball is on one side,
+        /// on the other, or in the jaws between them -- and the jaws are a real
+        /// place a ball can stop and sit, which is exactly what the USCA
+        /// diagram's ball C is doing when it has not scored. So a side only
+        /// changes when the ball is entirely past a face, and being in the jaws
+        /// changes nothing at all: the ball keeps the side it came in from
+        /// until it clears one end or the other.
+        ///
+        /// Everything the rules say about running a hoop then falls out of
+        /// that. Stopping in the jaws scores nothing and scores properly on the
+        /// stroke that carries the ball out; going halfway back and forward
+        /// again scores nothing, because no side was ever changed.
+        ///
+        /// Only counted while the ball is in the mouth of the wicket, which is
+        /// what separates running it from rolling past the outside.
+        ///
+        /// LEAVING the mouth forgets the side, and that is the whole of what
+        /// makes this a hoop rather than an infinite plane across the court. A
+        /// side that survived the ball wandering off was a latch anything could
+        /// flip from either end: a ball level with the hoop, struck so that it
+        /// passed a metre wide of it and came to rest somewhere back in line
+        /// further up the court, was seen on the near side and then on the far
+        /// side and scored the point without ever being near the wires. So a
+        /// ball outside the uprights is at no hoop at all, and the next time it
+        /// is seen in the mouth that is a first sighting -- which is exactly
+        /// the rulebook's ball that "arrives on the far side round the
+        /// outside" and has scored nothing.
         /// </summary>
         static void CountCrossings(World w, int ball, Vec2 from, Vec2 to)
         {
             var hoops = w.Field.Hoops;
+            double r = w.Spec.BallRadius;
+
             for (int h = 0; h < hoops.Length; h++)
             {
-                double before = from.X - hoops[h].Center.X;
-                double after = to.X - hoops[h].Center.X;
+                var hoop = hoops[h];
 
-                int dir;
-                if (before <= 0 && after > 0) dir = 1;
-                else if (before >= 0 && after < 0) dir = -1;
-                else continue;
+                // Wide of the uprights: on neither side of anything, and no
+                // longer on the side it used to be on either.
+                if (Math.Abs(to.Y - hoop.Center.Y) > hoop.HalfGap)
+                {
+                    w.Side[ball, h] = 0;
+                    continue;
+                }
 
-                // Where along y it crossed, so a ball passing wide of the hoop
-                // on the same plane is not credited with running it.
-                double t = (before - after) == 0 ? 0 : before / (before - after);
-                double yAt = from.Y + (to.Y - from.Y) * t;
+                double deep = to.X - hoop.Center.X;
+                double clear = hoop.WireRadius + r;
 
-                if (Math.Abs(yAt - hoops[h].Center.Y) < hoops[h].HalfGap)
-                    w.NoteCross(ball, h, dir);
+                int side = deep > clear ? 1 : deep < -clear ? -1 : 0;
+                if (side == 0) continue;                    // in the jaws
+
+                int was = w.Side[ball, h];
+                if (was == side) continue;
+
+                w.Side[ball, h] = side;
+
+                // Zero is "has never been at this hoop", so the first sighting
+                // records where the ball is rather than a crossing it did not
+                // make.
+                if (was != 0) w.NoteCross(ball, h, side);
             }
         }
 
