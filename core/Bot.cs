@@ -84,6 +84,19 @@ namespace Croquet.Core
         /// </summary>
         public int FreePlies = 2;
 
+        /// <summary>
+        /// How often to play something other than the best stroke, 0 to 1.
+        ///
+        /// Zero in every shipped bot -- a player who throws away one stroke in
+        /// six is not a difficulty level, it is a bot that is broken in a way
+        /// nobody can read. This exists for <c>Croquet.Train</c>, where the
+        /// point of a game is the positions it visits rather than who wins it.
+        /// </summary>
+        public double Explore = 0;
+
+        /// <summary>How many of the leaders exploration picks between.</summary>
+        public int ExploreTop = 4;
+
         /// <summary>Leading candidates re-priced by what this hand would do to them.</summary>
         public int RiskChecks = 10;
 
@@ -357,12 +370,49 @@ namespace Croquet.Core
         {
             LastSearched = 0;
             Planned = 0;
+            ranked = null;
 
             // Free plies on top of whatever Lookahead pays for. A roquet buys
             // TWO strokes -- the croquet stroke and the continuation after it --
             // and a search that values only one of them undervalues every roquet
             // by most of what a roquet is for.
-            return SearchInner(game, depth, FreePlies, out best);
+            var chosen = SearchInner(game, depth, FreePlies, out best);
+
+            return Explore > 0 ? Wander(chosen, ref best) : chosen;
+        }
+
+        /// <summary>
+        /// Sometimes play something other than the best stroke.
+        ///
+        /// Only for collecting training games, and off in every shipped bot.
+        /// A bot that always plays its favourite produces games that only ever
+        /// visit positions it already likes, and a network learned from those
+        /// is confident exactly where it has been and blind everywhere else --
+        /// which is the half of the lawn it most needs an opinion about. The
+        /// cure is to make it try things, and the cost is that some of the
+        /// games are worse played. That is a bargain: a label is measured from
+        /// what actually happened afterwards, so a bad stroke honestly labelled
+        /// is a real example of a bad stroke, and there is no other way to get
+        /// one.
+        ///
+        /// A winning stroke is never passed over. Exploration is for finding
+        /// out what a position is worth, and there is nothing left to find out
+        /// about a game that is over.
+        /// </summary>
+        BotMove Wander(BotMove chosen, ref double best)
+        {
+            if (ranked == null || ranked.Count < 2) return chosen;
+            if (rng.NextDouble() >= Explore) return chosen;
+
+            var pool = new List<(BotMove Move, double Score, Game After)>(ranked);
+            pool.Sort((a, b) => b.Score.CompareTo(a.Score));
+
+            if (pool[0].After != null && pool[0].After.Winner != null) return chosen;
+
+            var pick = pool[rng.Next(Math.Min(Math.Max(2, ExploreTop), pool.Count))];
+            best = pick.Score;
+            pick.Move.Score = best;
+            return pick.Move;
         }
 
         BotMove SearchInner(Game game, int depth, int free, out double best)
@@ -538,9 +588,18 @@ namespace Croquet.Core
             foreach (var (m, s, _) in scored)
                 if (s > best) { best = s; chosen = m; }
 
+            // Kept so the outermost caller can pick something other than the
+            // best when it is exploring. Every level writes this and the
+            // outermost writes LAST, because the recursive calls all happen
+            // above, inside the deepening loop.
+            ranked = scored;
+
             chosen.Score = best;
             return chosen;
         }
+
+        /// <summary>The last set of candidates scored, best-first after a sort.</summary>
+        List<(BotMove Move, double Score, Game After)> ranked;
 
         /// <summary>
         /// What a stroke is actually worth to a player with this hand: the mean

@@ -29,13 +29,51 @@ namespace Croquet.Train;
 /// </summary>
 public static class Positions
 {
-    /// <summary>
-    /// Six balls, every one for itself, which is how the game is played by
-    /// default. Partnerships come later and will want their own training: what
-    /// a ball should do for a partner is a different question, and mixing the
-    /// two would teach it neither.
-    /// </summary>
     public const int Balls = 6;
+
+    /// <summary>
+    /// Sides the six balls are split into. Two makes three a side.
+    ///
+    /// Zero is cutthroat, every ball for itself, which is what this trained on
+    /// first. A partnership is a different game and not a variation on the same
+    /// one: half the value of a stroke is what it does for a ball you are not
+    /// playing, and none of that exists when every ball is a rival.
+    /// </summary>
+    public static int Teams = 2;
+
+    /// <summary>
+    /// What winning adds to the label, in points.
+    ///
+    /// Deliberately SMALL, and this is the opposite of an oversight. The label
+    /// is meant to say what a stroke is worth over the next turn or two, and a
+    /// win worth twelve points swamps everything a stroke can actually
+    /// influence -- so the network spends its capacity on the handful of
+    /// positions near the end of a game and learns little about the several
+    /// hundred strokes that got there.
+    ///
+    /// This is NOT <see cref="Net.Won"/>, and the difference matters. That one
+    /// is what the SEARCH is handed for a game already over, and it stays large
+    /// so that a win always outranks any position the network could predict --
+    /// a bot that declines to win because a break looks promising is the
+    /// failure this guards against. Small in the label, large at the terminal:
+    /// the network never learns to predict a number near twelve, so a real win
+    /// beats every prediction it can make.
+    /// </summary>
+    public static double WinBonus = 2.0;
+
+    /// <summary>
+    /// Share of games that start from a scattered lawn rather than the opening.
+    ///
+    /// Every game from the same opening means the network sees the first few
+    /// strokes of croquet a hundred thousand times and the middle of a close
+    /// game rarely -- and the middle is where nearly every real decision is
+    /// made. Scattering costs nothing and roughly doubles the variety of
+    /// positions a run produces.
+    ///
+    /// The labels stay honest, because they are measured from what the balls
+    /// actually go on to do from wherever they were put.
+    /// </summary>
+    public static double Scatter = 0.5;
 
     /// <summary>Every nth stroke is kept. Consecutive positions are nearly the
     /// same position, and a hundred copies of one lawn is one example.</summary>
@@ -49,6 +87,44 @@ public static class Positions
     /// can be said to have worked.
     /// </summary>
     const double Fade = 0.88;
+
+    /// <summary>
+    /// Which side each ball is on, or null for cutthroat.
+    ///
+    /// Alternating rather than blocked, so a side's balls are not consecutive
+    /// in playing order. That is the real game, and it is also the only
+    /// arrangement in which playing for a partner means anything: the
+    /// opponents strike in between, so a ball left in a good place has to
+    /// survive their turn to be worth leaving there.
+    /// </summary>
+    public static int[] Sides()
+    {
+        if (Teams < 2) return null;
+
+        var s = new int[Balls];
+        for (int i = 0; i < Balls; i++) s[i] = i % Teams;
+        return s;
+    }
+
+    /// <summary>Is this spot clear of the balls already placed and the furniture?</summary>
+    static bool Room(Game game, int upTo, Vec2 at, double radius)
+    {
+        for (int j = 0; j < upTo; j++)
+            if ((game.World.Balls[j].Pos - at).Length < radius * 4) return false;
+
+        var field = game.World.Field;
+
+        foreach (var hoop in field.Hoops)
+        {
+            if ((hoop.LeftPost - at).Length < radius + hoop.WireRadius * 2) return false;
+            if ((hoop.RightPost - at).Length < radius + hoop.WireRadius * 2) return false;
+        }
+
+        foreach (var peg in field.Pegs)
+            if ((peg - at).Length < radius + field.PegRadius * 2) return false;
+
+        return true;
+    }
 
     public static CourtSpec Lawn() => new CourtSpec
     {
@@ -101,7 +177,7 @@ public static class Positions
                     foreach (var (x, who, at) in seen)
                     {
                         foreach (float v in x) write.Write(v);
-                        write.Write((float)Ahead(ledger, at, who));
+                        write.Write((float)Ahead(ledger, at, who, Sides()));
                         kept++;
                     }
                 }
@@ -114,14 +190,27 @@ public static class Positions
     }
 
     /// <summary>
-    /// What one ball gains from a position, discounted into the future.
+    /// What a position is worth to <paramref name="who"/>'s SIDE, discounted
+    /// into the future.
     ///
-    /// Its own points less the AVERAGE of its opponents', not their total: with
-    /// six players a point to one of five rivals is a fifth of the harm that a
-    /// point to your only rival would be, and scoring it as the full amount
-    /// would teach a bot that everything is hopeless.
+    /// Points my side goes on to score, less the points the other side scores,
+    /// over the next turn or two. That is the whole reward, and it is
+    /// deliberately about wickets rather than about winning: a stroke is worth
+    /// what it does to the flow of points on both sides, and the game is a few
+    /// hundred strokes long, so "did this side eventually win" is a fact about
+    /// the game and barely a fact about the stroke at all.
+    ///
+    /// A partner's hoop counts as much as my own, because it is worth as much:
+    /// the side's score is what wins, and a stroke that sets a partner up for
+    /// three hoops is better than one that gets me one. That is precisely the
+    /// judgement no amount of "how well is MY ball doing" can express, and the
+    /// reason a partnership needs training of its own.
+    ///
+    /// Averaged per ball on each side rather than totalled, so that cutthroat
+    /// -- where it is one of me and five of them -- lands on the same scale as
+    /// three a side rather than teaching a bot that everything is hopeless.
     /// </summary>
-    static double Ahead(List<double[]> ledger, int at, int who)
+    static double Ahead(List<double[]> ledger, int at, int who, int[] sides)
     {
         double sum = 0, weight = 1;
 
@@ -129,10 +218,17 @@ public static class Positions
         {
             var gains = ledger[i];
 
-            double others = 0;
-            for (int b = 0; b < gains.Length; b++) if (b != who) others += gains[b];
+            double mine = 0, theirs = 0;
+            int ours = 0, them = 0;
 
-            sum += weight * (gains[who] - others / Math.Max(1, gains.Length - 1));
+            for (int b = 0; b < gains.Length; b++)
+            {
+                bool together = sides == null ? b == who : sides[b] == sides[who];
+                if (together) { mine += gains[b]; ours++; }
+                else { theirs += gains[b]; them++; }
+            }
+
+            sum += weight * (mine / Math.Max(1, ours) - theirs / Math.Max(1, them));
 
             weight *= Fade;
             if (weight < 0.01) break;          // past here it cannot matter
@@ -155,13 +251,21 @@ public static class Positions
     static bool PlayOne(int seed, Bot pattern, List<(float[], int, int)> seen,
                         List<double[]> ledger, CancellationToken quit)
     {
+        var dice = new Random(seed * 7919 + 13);
+
         var arr = new Ball[Balls];
         for (int i = 0; i < Balls; i++) arr[i] = new Ball(Vec2.Zero);
 
         // Null sides is cutthroat: every ball its own side, which is what
-        // Bot.SameSide reads it as.
-        var game = new Game(new World(arr, Field.NineWicket(), Lawn()), null,
+        // Bot.SameSide reads it as. Otherwise alternating, so the balls of a
+        // side are not consecutive in playing order -- which is the real game
+        // and also the only arrangement where a partner is ever worth playing
+        // for, since the opponents strike in between.
+        var game = new Game(new World(arr, Field.NineWicket(), Lawn()), Sides(),
                             RuleOptions.Basic);
+
+        var spec = game.World.Spec;
+        bool scattered = dice.NextDouble() < Scatter;
 
         for (int i = 0; i < Balls; i++)
         {
@@ -169,6 +273,35 @@ public static class Positions
             game.World.Balls[i].InPlay = true;
             game.World.Balls[i].Pos = game.World.Field.StartSpot
                                     + new Vec2(0, (i - (Balls - 1) / 2.0) * 0.35);
+        }
+
+        // A lawn part way through a game, rather than the opening again.
+        //
+        // Placed clear of each other and of the furniture, and given a course
+        // point somewhere short of finished. Nothing here has to be a position
+        // real play would reach: what makes a label honest is that it is
+        // measured from what the balls actually do NEXT, and they play on from
+        // here under the ordinary rules whatever the arrangement.
+        if (scattered)
+        {
+            for (int i = 0; i < Balls; i++)
+            {
+                game.States[i].Point = dice.Next(0, Math.Max(1, game.States[i].Total - 1));
+
+                for (int tries = 0; tries < 40; tries++)
+                {
+                    var at = new Vec2(spec.BallRadius + dice.NextDouble()
+                                        * (spec.Width - spec.BallRadius * 2),
+                                      spec.BallRadius + dice.NextDouble()
+                                        * (spec.Height - spec.BallRadius * 2));
+
+                    if (Room(game, i, at, spec.BallRadius))
+                    {
+                        game.World.Balls[i].Pos = at;
+                        break;
+                    }
+                }
+            }
         }
 
         var bots = new Bot[Balls];
@@ -186,7 +319,9 @@ public static class Positions
                 PowerError = pattern.PowerError,
                 RangeError = pattern.RangeError,
                 Weights = pattern.Weights,
-                Net = pattern.Net
+                Net = pattern.Net,
+                Explore = pattern.Explore,
+                ExploreTop = pattern.ExploreTop
             };
         }
 
@@ -210,9 +345,12 @@ public static class Positions
             var gains = new double[Balls];
             for (int i = 0; i < Balls; i++) gains[i] = game.States[i].Point - before[i];
 
-            // And the game ending is the biggest gain there is.
+            // And the game ending, worth a couple of hoops rather than a
+            // dozen -- see WinBonus. The search still treats a finished game as
+            // worth Net.Won, which is much larger; this is only what the
+            // network is asked to learn to see coming.
             if (game.Winner != null)
-                foreach (int w in game.Winner) gains[w] += Net.Won;
+                foreach (int w in game.Winner) gains[w] += WinBonus;
 
             ledger.Add(gains);
 

@@ -574,13 +574,60 @@ one starts from the last that succeeded, so a bad round costs time rather than
 progress.
 
 ```sh
-dotnet run --project tools/Croquet.Train -c Release -- cycle --generations 4 --games 1500
+dotnet run --project tools/Croquet.Train -c Release -- cycle --generations 3 --games 800
 ```
 
 Learning from the last **two** generations rather than only the newest is not a
 detail: training each generation on its own games alone is how a self-play loop
 oscillates, chasing whatever the newest policy did and forgetting what it held
 last time. A replay buffer, spelled as files.
+
+### The reward is wickets, not winning
+
+The label is **my side's points less the other side's, over the next turn or
+two**, discounted at 0.88 a stroke. A partner's hoop counts exactly as much as
+the striker's own, because it is worth as much -- the side's score is what wins,
+so a stroke that sets a partner up for three hoops beats one that gets you one.
+That judgement is the whole of what a partnership is, it cannot be expressed in
+any amount of "how is MY ball doing", and it is why `Positions.Teams` defaults
+to two sides of three rather than the cutthroat this first trained on.
+
+**Winning is deliberately a small part of it** -- `Positions.WinBonus`, two
+points, about a hoop and a half. A win worth twelve swamps everything a single
+stroke can influence, so the network spends its capacity on the few positions
+near the end of a game and learns little about the several hundred strokes that
+got there. One stroke does not move the odds of winning a two-hundred-stroke
+game; it moves the flow of wickets, and that is the thing worth predicting.
+
+`Positions.WinBonus` is **not** `Net.Won`, and the gap between them is
+load-bearing. `Net.Won` is what the SEARCH is handed for a game already over,
+and it stays large, so that a win always outranks any position the network could
+predict. Small in the label, large at the terminal: the network never learns to
+predict a number anywhere near twelve, so a real win beats every prediction it
+can make and the bot cannot talk itself out of closing a game.
+
+### Aggressive variation, and why the games are worse on purpose
+
+Two knobs, both off in every shipped bot and both only for collecting.
+
+**`Bot.Explore`** plays something other than the best stroke one time in five,
+picked from the leaders. A bot that always plays its favourite produces games
+that only ever visit positions it already likes, and a network learned from
+those is confident exactly where it has been and blind everywhere else -- which
+is the half of the lawn it most needs an opinion about. The cost is that some
+games are worse played, and that is a bargain: the label is measured from what
+actually happened afterwards, so a bad stroke honestly labelled is a real
+example of a bad stroke, and there is no other way to come by one. A winning
+stroke is never passed over, because there is nothing left to find out about a
+game that is over.
+
+**`Positions.Scatter`** starts half the games from a lawn part way through,
+balls placed clear of each other and given a course point short of finished.
+Every game from the same opening means seeing the first few strokes of croquet a
+hundred thousand times and the middle of a close game rarely -- and the middle
+is where nearly every real decision is made. The positions need not be ones real
+play would reach; what keeps the labels honest is that play continues from them
+under the ordinary rules.
 
 ### The search knows whose hand it is
 

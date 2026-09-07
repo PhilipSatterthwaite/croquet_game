@@ -205,6 +205,13 @@ switch (command)
         int keep = Math.Max(1, Num("keep", 2));
         int judged = Num("judge", 200);
 
+        // What the reward is made of, and how varied the games that produce it
+        // are. All four are the levers worth turning between runs.
+        Positions.Teams = Num("teams", 2);
+        Positions.WinBonus = Real("win", 2.0);
+        Positions.Scatter = Real("scatter", 0.5);
+        double explore = Real("explore", 0.2);
+
         string dataDir = Path.Combine(Root(), "data");
         string bestPath = Arg("out", Path.Combine(Root(), "weights", "net.txt"));
         Directory.CreateDirectory(dataDir);
@@ -233,6 +240,13 @@ switch (command)
                           $"learning from the last {keep}");
         Console.WriteLine($"{Sight.Size} inputs, {Net.Hidden} hidden, " +
                           $"{Net.Weights:N0} weights");
+        Console.WriteLine(Positions.Teams >= 2
+            ? $"{Positions.Teams} sides of {Positions.Balls / Positions.Teams}; " +
+              "reward is my side's points less theirs"
+            : "cutthroat; reward is my points less the average of the rest");
+        Console.WriteLine($"winning adds {Positions.WinBonus:0.#} -- " +
+                          $"{Positions.Scatter * 100:0}% of games start scattered, " +
+                          $"{explore * 100:0}% of strokes explore");
         Console.WriteLine(best == null
             ? "starting from the linear weights -- generation 1 learns from their games\n"
             : $"starting from {Path.GetFileName(bestPath)}\n");
@@ -247,6 +261,7 @@ switch (command)
             // ---- play ----
             var pattern = Bot.Casual();
             pattern.Net = latest;                   // null plays the linear weights
+            pattern.Explore = explore;              // and it tries things
 
             string data = Path.Combine(dataDir, $"positions-gen{g}.bin");
             var clock = Stopwatch.StartNew();
@@ -295,9 +310,14 @@ switch (command)
             // ---- and does it actually play better ----
             Console.WriteLine($"\n  {judged} games against the linear weights...");
 
+            // Judged at the same shape it was trained on. A net taught to play
+            // for a partner, measured in a free-for-all, is being asked about a
+            // game it has never seen -- and would look bad for a reason that is
+            // nothing to do with how well it learned.
             var outcome = Duel.Series(BotWeights.Default, BotWeights.Default, judged,
                                       900_000 + g * 10_000, Positions.Balls,
-                                      stop.Token, null, trained, solo: true);
+                                      stop.Token, null, trained,
+                                      solo: Positions.Teams < 2);
 
             Console.WriteLine($"  generation {g}: {outcome}");
             Console.WriteLine("  " + Wilson(outcome));
