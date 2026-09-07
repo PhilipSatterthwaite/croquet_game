@@ -29,6 +29,12 @@ unity/Assets/AssetStoreTools*
 # breaks every reference in every scene.
 !*.meta
 
+# Self-play positions. Hundreds of megabytes of numbers that any machine can
+# regenerate with `collect`, and nothing downstream of them is reproducible from
+# the file anyway -- what matters is the net that came out, which is text in
+# weights/. GitHub refuses a file this size in any case.
+data/
+
 # Builds and signing
 *.apk
 *.aab
