@@ -228,6 +228,7 @@ switch (command)
         Rollouts.Candidates = Num("candidates", 8);
         Rollouts.Horizon = Num("horizon", 12);
         Rollouts.RootEvery = Num("every", 20);
+        Rollouts.Steady = Arg("wobbly", "") == "";
 
         // Both namable, because they were not and a smoke run wrote its
         // sixteen-game files over an overnight collection under the same fixed
@@ -273,7 +274,7 @@ switch (command)
         Console.WriteLine(ranking
             ? $"ROLLOUTS: {Rollouts.Candidates} candidates a root, "
             + $"{Rollouts.Horizon} strokes each, a root every {Rollouts.RootEvery}"
-            + " -- labels are centred advantages"
+            + $" -- centred advantages, {(Rollouts.Steady ? "steady" : "shaky")} hands"
             : "labels are discounted returns");
         Console.WriteLine(best == null
             ? "starting from the linear weights -- generation 1 learns from their games\n"
@@ -367,8 +368,17 @@ switch (command)
             // net is BUILT to choose between strokes on its own -- that is the
             // whole object -- and the sweep is how we find out whether it can
             // yet. A returns net never could, and starts quiet.
+            // Zero -- the net alone -- is NOT in the ranking ladder, and the
+            // first run is why. It went 0 from 200 there, and that was a fault
+            // rather than weak learning: a centred advantage has no absolute
+            // scale, so comparing one against another from a DIFFERENT root,
+            // which is what deepening does, compares two numbers measured from
+            // two different zeroes. Until the search knows that a centred
+            // label is reward-like and must be added rather than replace, the
+            // net is only meaningful alongside something that does have a
+            // scale.
             var ladder = Arg("blend", "") != "" ? new[] { blend }
-                       : ranking                ? new[] { 0.0, 0.5, 2.0 }
+                       : ranking                ? new[] { 0.5, 1.5, 4.0 }
                                                 : new[] { 0.15, 0.35, 0.8 };
 
             Duel.Result outcome = default;

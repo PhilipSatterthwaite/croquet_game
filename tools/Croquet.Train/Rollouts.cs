@@ -60,6 +60,36 @@ public static class Rollouts
     public static int RootEvery = 20;
 
     /// <summary>
+    /// Whether the players carrying on from each candidate strike perfectly.
+    ///
+    /// This is the difference between a label with noise in it and a label with
+    /// none, and the first run made the case. Common random numbers were
+    /// supposed to cancel the luck: same seeds down every branch, so only the
+    /// stroke differs. They barely did. After different first strokes the
+    /// games diverge at once and the bots consume their streams differently, so
+    /// each rollout was very nearly an independent sample. Measured: signal
+    /// 0.151, noise 0.42 -- better than the 1:8 of predicting returns, and
+    /// still three parts noise to one of signal.
+    ///
+    /// A steady hand removes the randomness rather than trying to cancel it.
+    /// From a given position a wobble-free continuation is COMPLETELY
+    /// determined, so the label becomes an exact function of the root and the
+    /// candidate, with no sampling error at all. Fitting it is then plain
+    /// function approximation instead of digging signal out of three times its
+    /// own size in noise.
+    ///
+    /// It is also three to four times cheaper, because a bot with no wobble
+    /// skips the risk re-pricing -- which replays every shortlisted candidate
+    /// several times over -- entirely.
+    ///
+    /// The price is bias: it scores positions as if everyone strikes well.
+    /// That is the ordinary meaning of a value function, and the bot already
+    /// accounts for its own hand separately, at the moment of choosing, in
+    /// Bot.Expected.
+    /// </summary>
+    public static bool Steady = true;
+
+    /// <summary>
     /// Plays games, stopping every so often to measure what each candidate
     /// stroke is worth. Returns how many samples were written.
     /// </summary>
@@ -77,23 +107,32 @@ public static class Rollouts
         var pen = new object();
         int kept = 0, done = 0;
 
-        Parallel.For(0, games, new ParallelOptions { CancellationToken = quit }, g =>
+        // Ctrl+C is a normal way for a run this long to end, so it must not
+        // come out as a stack trace. Everything already written is a perfectly
+        // good, smaller sample -- the file is flushed and every record in it is
+        // whole -- and throwing here threw that away along with the hours that
+        // produced it.
+        try
         {
-            var got = new List<(float[] X, float Y)>();
-            PlayOne(fromSeed + g, boot, got, quit);
-
-            lock (pen)
+            Parallel.For(0, games, new ParallelOptions { CancellationToken = quit }, g =>
             {
-                foreach (var (x, y) in got)
-                {
-                    foreach (float v in x) write.Write(v);
-                    write.Write(y);
-                    kept++;
-                }
-            }
+                var got = new List<(float[] X, float Y)>();
+                PlayOne(fromSeed + g, boot, got, quit);
 
-            progress?.Invoke(Interlocked.Increment(ref done), games);
-        });
+                lock (pen)
+                {
+                    foreach (var (x, y) in got)
+                    {
+                        foreach (float v in x) write.Write(v);
+                        write.Write(y);
+                        kept++;
+                    }
+                }
+
+                progress?.Invoke(Interlocked.Increment(ref done), games);
+            });
+        }
+        catch (OperationCanceledException) { }
 
         return kept;
     }
@@ -209,7 +248,14 @@ public static class Rollouts
         int balls = game.World.Balls.Length;
 
         var bots = new Bot[balls];
-        for (int i = 0; i < balls; i++) bots[i] = Bot.Casual(seed * 31 + i * 17);
+        for (int i = 0; i < balls; i++)
+        {
+            bots[i] = Bot.Casual(seed * 31 + i * 17);
+
+            // See Steady. With these at zero the whole continuation is
+            // determined, so this rollout has no sampling error in it.
+            if (Steady) bots[i].AimError = bots[i].PowerError = 0;
+        }
 
         var before = new double[balls];
         double sum = 0, weight = 1;

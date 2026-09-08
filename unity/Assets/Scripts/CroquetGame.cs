@@ -4,8 +4,15 @@ using System.Threading.Tasks;
 using Croquet.Core;
 using UnityEngine;
 
-/// <summary>Who plays a ball. Human means this device; the rest are the machine.</summary>
-public enum Hand { Human, Beginner, Casual, Expert }
+/// <summary>
+/// Who plays a ball. Human means this device; the rest are the machine.
+///
+/// <c>Net</c> is Casual's hand with the learned network mixed into its
+/// judgement -- the same striking, a different opinion about what to attempt.
+/// It is last so that adding it did not renumber the others, which the menu
+/// cycles through by index.
+/// </summary>
+public enum Hand { Human, Beginner, Casual, Expert, Net }
 
 /// <summary>What the game is doing, which is what everything else keys off.</summary>
 public enum Phase
@@ -171,6 +178,12 @@ public class CroquetGame : MonoBehaviour
     SpriteRenderer marker, target;
 
     readonly Dictionary<Hand, Bot> bots = new Dictionary<Hand, Bot>();
+
+    [Header("The learned net")]
+    [Tooltip("How loudly the net speaks against the hand-tuned weights, in hoops "
+           + "a point. Zero is the net alone; training reports which value won.")]
+    [Range(0f, 4f)] public float netBlend = 0.35f;
+
     Replay pending;
     Coroutine loop;
 
@@ -418,12 +431,54 @@ public class CroquetGame : MonoBehaviour
             {
                 Hand.Beginner => Bot.Beginner(),
                 Hand.Expert => Bot.Expert(),
+                Hand.Net => Thinking(Bot.Casual()),
                 _ => Bot.Casual()
             };
             bots[hand] = bot;
         }
         return bot;
     }
+
+    /// <summary>
+    /// Casual, with the learned network added to its judgement.
+    ///
+    /// The net is read here rather than in <c>core</c> because the core does no
+    /// file IO at all -- that is what keeps it consumable under IL2CPP -- so
+    /// the engine loads the text and hands it over as a string, which is the
+    /// same shape of arrangement as pasting weights into a constant, minus the
+    /// six hundred kilobytes of generated source.
+    ///
+    /// A missing or mismatched file is not an error worth stopping for: the bot
+    /// simply plays the hand-tuned weights, which is what every other level
+    /// does, and says so once in the console.
+    /// </summary>
+    Bot Thinking(Bot bot)
+    {
+        if (!lookedForNet)
+        {
+            lookedForNet = true;
+
+            var asset = Resources.Load<TextAsset>("net");
+            if (asset == null)
+                Debug.LogWarning("Hand.Net: no Assets/Resources/net.txt -- "
+                               + "playing the hand-tuned weights instead");
+            else
+            {
+                learned = Net.FromText(asset.text);
+                if (learned == null)
+                    Debug.LogWarning("Hand.Net: net.txt was written for a different "
+                                   + "encoding than this build reads -- "
+                                   + "playing the hand-tuned weights instead");
+            }
+        }
+
+        bot.Net = learned;
+        bot.NetBlend = netBlend;
+        return bot;
+    }
+
+    Net learned;
+    bool lookedForNet;
 
     /// <summary>
     /// Plays back a shot whose outcome is already settled. Positions come
