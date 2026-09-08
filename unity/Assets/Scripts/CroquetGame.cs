@@ -431,7 +431,7 @@ public class CroquetGame : MonoBehaviour
             {
                 Hand.Beginner => Bot.Beginner(),
                 Hand.Expert => Bot.Expert(),
-                Hand.Net => Thinking(Bot.Casual()),
+                Hand.Net => Learned(Bot.Casual()),
                 _ => Bot.Casual()
             };
             bots[hand] = bot;
@@ -452,7 +452,7 @@ public class CroquetGame : MonoBehaviour
     /// simply plays the hand-tuned weights, which is what every other level
     /// does, and says so once in the console.
     /// </summary>
-    Bot Thinking(Bot bot)
+    Bot Learned(Bot bot)
     {
         if (!lookedForNet)
         {
