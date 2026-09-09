@@ -692,6 +692,63 @@ The blend ladder for a ranking run includes **zero**, meaning the net alone.
 That is the point of the exercise: an advantage net is built to choose between
 strokes without help, and the sweep is how we find out whether it can yet.
 
+### What the fourth attempt measured, and the thing worth knowing
+
+The rollout net fits its labels far better than anything before it:
+
+| | variance explained | of the true range, it predicts | separates 144 strokes by |
+|---|---|---|---|
+| returns net | 31% | -- | 0.70 |
+| shaky advantage | 10.5% | 34% | -- |
+| **steady advantage** | **60%** | **83%** | **2.48** |
+
+Deterministic rollouts did what they were meant to. It discriminates between
+strokes in a single turn nearly **four times** more sharply than the shipped
+net. And it still does not beat the linear weights at any volume: 55%, 45%,
+41%, 48% at rising blends, which at 150 games apiece is a flat line through
+noise, then 14% and 0.7% once the net is louder than the weights.
+
+**Two ways to get a blend wrong, both made here.**
+
+*The scale is not the blend.* `NetBlend` is in hoops per point, so the net's
+actual voice is `blend x Hoop x (the spread of its own answers)`. When the
+labels changed from returns to steady advantages that spread grew six-fold, and
+a ladder of 0.5/1.5/4 -- chosen when it was 0.15 -- silently became 51%, 154%
+and 410% of the weights' own spread. The shipped net speaks at **9%**. Compute
+the voice, never the blend.
+
+*A guess about the future is a substitute for looking at it.* `Judge` returns
+`Evaluate + blend x Net`, a reward plus an estimate of what follows. Deepening
+then added `follow x 0.75` on top -- but the net's term already contained that
+future, so it was counted twice, by an amount growing with the blend. That is
+the exact shape of a bot that gets worse the louder you read it.
+`BotMove.Reward` now carries the stroke's own contribution separately, and a
+deepened candidate builds on that, dropping the estimate it has just superseded.
+With no net `Reward == Score` and every shipped bot is unchanged.
+
+**And the finding that matters more than the net.** The same measurement made
+with a wobbly hand and a steady one says how much choosing well is worth:
+
+| continuation hand | spread of true advantage over 8 candidates |
+|---|---|
+| Casual | 0.151 points |
+| steady | 0.921 points |
+
+**A Casual hand destroys about 85% of the value of judgement.** A good idea
+struck badly and a poor idea struck badly finish in much the same place, so the
+gap between the best candidate and the eighth is worth a seventh of what it is
+worth to a player who can execute. That is why every match in this project sits
+between 45% and 55% and needs hundreds of games to say anything: the linear
+weights are already near the ceiling that execution noise imposes, and there is
+very little left for a better evaluator to win.
+
+Two things follow. Better judgement should pay at **Expert**, where the hand no
+longer washes the choice out -- and that is the cheap experiment to run before
+paying for another night. And at Casual, **"more human" is the right thing to
+optimise rather than win rate**: if the choice barely moves the outcome, a net
+that picks differently costs nothing and reads as varied instead of mechanical,
+which is a better game to play against.
+
 ### The search knows whose hand it is
 
 Every candidate is first played **perfectly**, which makes a thirty-metre roquet

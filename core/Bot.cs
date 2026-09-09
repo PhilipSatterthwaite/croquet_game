@@ -19,6 +19,21 @@ namespace Croquet.Core
         /// <summary>What the search thought the position would be worth afterwards.</summary>
         public double Score;
 
+        /// <summary>
+        /// The part of <see cref="Score"/> that is this stroke's own doing,
+        /// with any estimate of what comes AFTERWARDS left out.
+        ///
+        /// The two have to be kept apart the moment a network is mixed in.
+        /// Evaluate is a reward -- what this stroke achieved -- so a stroke plus
+        /// its discounted follow-up is the total good, and adding is right. A
+        /// network's contribution is a guess at the future, and a guess at the
+        /// future is a SUBSTITUTE for looking at it. Add the follow-up on top
+        /// of it and the future is counted twice, by an amount that grows with
+        /// however loudly the network is being read -- which is exactly the
+        /// shape of a bot that gets worse the more you listen to it.
+        /// </summary>
+        public double Reward;
+
         /// <summary>How the move was arrived at, for showing the reasoning.</summary>
         public string Note = "";
     }
@@ -447,8 +462,9 @@ namespace Croquet.Core
                 catch (InvalidOperationException) { continue; }
                 LastSearched++;
 
-                double s = Judge(game, clone, r, me);
+                double s = Judge(game, clone, r, me, out double reward);
                 m.Score = s;
+                m.Reward = reward;
                 scored.Add((m, s, clone));
             }
 
@@ -497,6 +513,7 @@ namespace Croquet.Core
                 {
                     var (m, clean, after) = pool[i];
                     pool[i] = (m, Expected(game, m, me, clean), after);
+
                 }
 
                 // Only the re-priced ones may now be chosen. A best-case score
@@ -588,7 +605,7 @@ namespace Croquet.Core
                     // rather than unboundedly. Only the pure-value mode
                     // replaces.
                     bool pureValue = Net != null && NetBlend <= 0;
-                    scored[i] = (m, pureValue ? follow : s + follow * 0.75, after);
+                    scored[i] = (m, pureValue ? follow : m.Reward + follow * 0.75, after);
                     done++;
                 }
             }
@@ -655,7 +672,7 @@ namespace Croquet.Core
         /// </summary>
         double Expected(Game game, BotMove m, int me, double clean)
         {
-            double total = clean;
+            double total = clean, rewards = m.Reward;
             int n = 1;
 
             for (int k = 0; k < RiskSamples; k++)
@@ -673,9 +690,15 @@ namespace Croquet.Core
                 catch (InvalidOperationException) { continue; }
                 LastSearched++;
 
-                total += Judge(game, clone, r, me);
+                total += Judge(game, clone, r, me, out double reward);
+                rewards += reward;
                 n++;
             }
+
+            // The reward half is averaged alongside, so that a candidate which
+            // is later deepened builds on its RE-PRICED reward rather than on
+            // the best-case one this was called to replace.
+            m.Reward = rewards / n;
             return total / n;
         }
 
@@ -991,15 +1014,32 @@ namespace Croquet.Core
         /// for both. Swapping a hand-built evaluator for a learned one should
         /// not be a change to the search, and here it is not.
         /// </summary>
-        double Judge(Game before, Game after, StrokeResult r, int me)
+        double Judge(Game before, Game after, StrokeResult r, int me) =>
+            Judge(before, after, r, me, out _);
+
+        /// <summary>
+        /// ...and separately, how much of that was the stroke itself rather
+        /// than a guess about the future. See <see cref="BotMove.Reward"/>.
+        /// </summary>
+        double Judge(Game before, Game after, StrokeResult r, int me,
+                     out double reward)
         {
-            if (Net == null) return Evaluate(before, after, r, me, Weights);
-            if (NetBlend <= 0) return Net.Value(after, me);
+            if (Net == null)
+            {
+                reward = Evaluate(before, after, r, me, Weights);
+                return reward;
+            }
+
+            if (NetBlend <= 0)
+            {
+                reward = 0;                       // all of it is a guess
+                return Net.Value(after, me);
+            }
 
             // The two together, in the weights' units: one point of the
             // network's opinion is worth NetBlend hoops.
-            return Evaluate(before, after, r, me, Weights)
-                 + NetBlend * Weights.Hoop * Net.Value(after, me);
+            reward = Evaluate(before, after, r, me, Weights);
+            return reward + NetBlend * Weights.Hoop * Net.Value(after, me);
         }
 
         /// <summary>
