@@ -757,13 +757,15 @@ public class CroquetGame : MonoBehaviour
             glints.Add(Shapes.Piece(root, "Ball " + i + " glint", Shapes.Gloss,
                                     new Color(1, 1, 1, 0.5f), Layer.Gloss));
 
-            // Faded, so a mark about a ball never reads as a ball: a pale,
-            // half-see-through version of its colour, on a light rim that is
-            // still enough to keep white and yellow readable on pale grass.
+            // The ball's own colour, just short of opaque, on a dark rim that
+            // keeps white and yellow readable on pale grass. The SHAPE is what
+            // says "a mark, not a ball" -- a triangle among discs -- so the
+            // colour can stay true. It was washed toward pale grey and made half
+            // see-through first, and red came out orange.
             boundRim.Add(Shapes.Piece(root, "Ball " + i + " bound rim", Shapes.Triangle,
-                                      new Color(0, 0, 0, 0.3f), Layer.BoundRim));
+                                      new Color(0, 0, 0, 0.45f), Layer.BoundRim));
             bound.Add(Shapes.Piece(root, "Ball " + i + " bound", Shapes.Triangle,
-                                   Faded(ColourOf(i)), Layer.Bound));
+                                   Marked(ColourOf(i)), Layer.Bound));
         }
 
         if (marker == null)
@@ -777,12 +779,16 @@ public class CroquetGame : MonoBehaviour
             arrow = Shapes.Piece(root, "Target direction", Shapes.Triangle, targetPaint, Layer.Target);
     }
 
-    /// <summary>A ball's colour washed toward pale grey and half see-through.</summary>
-    static Color Faded(Color c)
+    /// <summary>
+    /// A ball's colour for a mark: the same hue and strength, just short of
+    /// opaque. Blending toward any grey moves the hue as well as the strength
+    /// -- a warm grey drags red toward orange -- and the more see-through it is,
+    /// the more the green lawn underneath drags it further.
+    /// </summary>
+    static Color Marked(Color c)
     {
-        var f = Color.Lerp(c, new Color(0.86f, 0.86f, 0.82f), 0.35f);
-        f.a = 0.62f;
-        return f;
+        c.a = 0.9f;
+        return c;
     }
 
     /// <summary>

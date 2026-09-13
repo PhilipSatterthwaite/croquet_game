@@ -1163,9 +1163,12 @@ side first, to keep clear of a ball sitting in front of the hoop, and read as
 pointing past the hoop rather than through it. It draws under the balls, so a
 ball parked there covers it rather than wearing it.
 
-**Every other ball's hoop is marked too**, with a small triangular arrow in a
-FADED version of that ball's colour — pale and half see-through, so a mark about
-a ball never reads as a ball — pointing the way that ball has to run the hoop.
+**Every other ball's hoop is marked too**, with a small triangular arrow in that
+ball's own colour on a dark rim, pointing the way that ball has to run the hoop.
+The colour stays true on purpose. It was washed toward pale grey and made half
+see-through, so the marks would not read as balls, and red came out orange: a
+warm grey drags red's hue, and green lawn showing through drags it further. The
+triangle's shape is what separates a mark from a ball, not a paler colour.
 It always sits in the same place: above the hoop for a ball running it
 rightward, below for leftward, halfway between the drawn wire and where the
 target ring's edge is, whether or not the ring is round that hoop. It used to
