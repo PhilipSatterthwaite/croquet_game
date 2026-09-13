@@ -121,6 +121,27 @@ namespace Croquet.Core.Tests
         }
 
         [Fact]
+        public void A_croquet_stroke_lands_where_the_rules_put_it()
+        {
+            // The croquet stroke is the one shot where the rules add something a
+            // plain collision would not -- the mallet's follow-through -- so it is
+            // the one most able to leave the film and the game disagreeing. Exact,
+            // for the same reason as the first test in this file.
+            var g = NewGame(4, (5, 7), (8, 7));
+            Replay.Play(g, new Vec2(1, 0), 3.0);
+            Assert.Equal(StrokeKind.Bonus, g.Stroke);
+
+            var r = Replay.PlayBonus(g, BonusWay.CroquetShot, new Vec2(-1, 0.3),
+                                     new Vec2(1, 0.1), 3.5);
+
+            for (int i = 0; i < g.World.Balls.Length; i++)
+            {
+                if (r.Result.BroughtIn.Contains(i)) continue;
+                Assert.Equal(g.World.Balls[i].Pos, r.LastFrame[i]);
+            }
+        }
+
+        [Fact]
         public void A_stroke_the_bot_chose_replays_the_same_way()
         {
             var g = NewGame(4, (5, 7), (11, 7.6));

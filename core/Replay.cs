@@ -147,6 +147,9 @@ namespace Croquet.Core
             int struck = striker;
             StrokeResult result;
 
+            // Read now: resolving the stroke forgets which ball was roqueted.
+            int croquetWith = bonus && way == BonusWay.CroquetShot ? game.RoquetedBall : -1;
+
             if (bonus)
             {
                 if (kind != StrokeKind.Bonus)
@@ -168,7 +171,7 @@ namespace Croquet.Core
                 result = game.Play(aim, power);
             }
 
-            var frames = Frame(before, wasInPlay, struck, aim, power, world);
+            var frames = Frame(before, wasInPlay, struck, aim, power, world, croquetWith);
             return new Replay(result, frames, striker, pointBefore, struck, before[struck],
                               kind, aim, power);
         }
@@ -180,7 +183,7 @@ namespace Croquet.Core
         /// carry the tallies Sim wants to write.
         /// </summary>
         static List<Vec2[]> Frame(Vec2[] before, bool[] wasInPlay, int struck,
-                                  Vec2 aim, double power, World real)
+                                  Vec2 aim, double power, World real, int croquetWith)
         {
             var balls = new Ball[before.Length];
             for (int i = 0; i < balls.Length; i++)
@@ -191,6 +194,12 @@ namespace Croquet.Core
 
             var scratch = new World(balls, real.Field, real.Spec);
             scratch.ClearShot();
+
+            // The same follow-through the rules played the stroke with, or the
+            // film would leave the striker short of where it actually stopped
+            // and it would jump on the last frame.
+            if (croquetWith >= 0) scratch.TakeCroquet(struck, croquetWith);
+
             balls[struck].Vel = aim.Normalized * power;
 
             var frames = new List<Vec2[]>(256) { Snap(balls) };

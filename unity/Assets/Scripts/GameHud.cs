@@ -103,8 +103,10 @@ public class GameHud : MonoBehaviour
         // Long and thin. Wide because it is read against a scale -- every extra
         // pixel is finer tuning per division -- and shallow because none of
         // that reading happens vertically. Height was left over from when it
-        // held a word.
-        meterRow.Pin(new Vector2(0, 1), new Vector2(18, -18), new Vector2(300, 20));
+        // held a word. It was 300 wide; with the scale now in distance rather
+        // than drag, the short strokes live in the first few divisions and
+        // want the room.
+        meterRow.Pin(new Vector2(0, 1), new Vector2(18, -18), new Vector2(460, 20));
 
         // A far tighter corner than a card gets. A gauge is read from its ENDS
         // -- empty, full, and how near either you are -- and a generous radius
@@ -136,11 +138,11 @@ public class GameHud : MonoBehaviour
     /// A plain scale across the bar, added after the fill so it stays legible
     /// over it.
     ///
-    /// The divisions are of the DRAG, not of distance -- they are evenly spaced
-    /// because the pull is what your hand is doing, and the curve that turns it
-    /// into a roll is not something to be read off a ruler. They are here so a
-    /// stroke can be repeated: "that one was four ticks" is the whole of what
-    /// they have to support, and a number of metres never told anybody that.
+    /// The divisions are of the STROKE -- tenths of a full-length roll -- so the
+    /// scale is linear in what the ball will do, while the drag that sets it
+    /// stays curved for control. They are here so a stroke can be repeated:
+    /// "that one was four ticks" is the whole of what they have to support, and
+    /// a number of metres never told anybody that.
     /// </summary>
     void Ticks(RectTransform track)
     {
@@ -416,7 +418,15 @@ public class GameHud : MonoBehaviour
     /// </summary>
     void Meter()
     {
-        float t = game.WaitingForYou && aim != null ? aim.PullFraction : 0;
+        // Linear in the STROKE, not in the thumb. The drag is still curved --
+        // its first half buys the first quarter of the court, so a short stroke
+        // is a slow, fine draw -- but the gauge shows what that drag produces:
+        // half the bar is half a full-length roll, and every tick is a tenth of
+        // one. The fill creeps at the start of a pull and races at the end,
+        // which is exactly where the precision is and is not.
+        float t = 0;
+        if (game.WaitingForYou && aim != null && game.maxRoll > 0)
+            t = Mathf.Clamp01((float)(aim.Roll / game.maxRoll));
 
         // The bar takes the striker's colour, so the corner says whose stroke
         // it is without spending a word on it.

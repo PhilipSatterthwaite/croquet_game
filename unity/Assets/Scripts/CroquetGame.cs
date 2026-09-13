@@ -102,6 +102,9 @@ public class CroquetGame : MonoBehaviour
     [Range(0.3f, 1f)] public float restitution = 0.8f;
     [Range(0.1f, 0.95f)] public float obstacleRestitution = 0.5f;
 
+    [Tooltip("How far the mallet's follow-through carries the back ball of a croquet stroke. See CourtSpec.CroquetFollow.")]
+    [Range(0f, 0.6f)] public float croquetFollow = 0.2f;
+
     /// <summary>
     /// How far a full-strength strike rolls on an empty lawn, in metres.
     ///
@@ -175,7 +178,12 @@ public class CroquetGame : MonoBehaviour
 
     /// <summary>The tight dark patch under each ball, where it presses in.</summary>
     readonly List<SpriteRenderer> seats = new List<SpriteRenderer>();
-    SpriteRenderer marker, target;
+    SpriteRenderer marker, target, arrow;
+
+    /// <summary>A dot over the hoop each ball is playing for, and a dark rim behind it.</summary>
+    readonly List<SpriteRenderer> bound = new List<SpriteRenderer>();
+    readonly List<SpriteRenderer> boundRim = new List<SpriteRenderer>();
+    bool[] boundShown = new bool[0];
 
     readonly Dictionary<Hand, Bot> bots = new Dictionary<Hand, Bot>();
 
@@ -321,6 +329,7 @@ public class CroquetGame : MonoBehaviour
         Court.Friction = friction;
         Court.Restitution = restitution;
         Court.ObstacleRestitution = obstacleRestitution;
+        Court.CroquetFollow = croquetFollow;
     }
 
     // ---- the loop ---------------------------------------------------------
@@ -496,6 +505,16 @@ public class CroquetGame : MonoBehaviour
         float f = 0;
         int last = shot.FrameCount - 1;
 
+        int n = Mathf.Min(discs.Count, shot.Frames[0].Length);
+
+        // A ball this stroke pegged out is off the lawn as far as the rules are
+        // concerned before a single frame of it has been drawn -- which is why
+        // it used to vanish the moment it was struck. So find the frame where
+        // it actually reaches its peg, show it getting there, and let it sink
+        // away against the peg rather than blinking out.
+        var touch = StakedAt(shot, n);
+        var sunk = new float[n];
+
         while (f < last)
         {
             f += Time.deltaTime * Replay.FramesPerSecond * Mathf.Max(0.05f, playbackSpeed);
@@ -507,21 +526,99 @@ public class CroquetGame : MonoBehaviour
             var a = shot.Frames[i];
             var b = shot.Frames[j];
 
-            for (int k = 0; k < discs.Count && k < a.Length; k++)
-                Place(k, Vector2.Lerp(ToVector(a[k]), ToVector(b[k]), t));
+            for (int k = 0; k < n; k++)
+            {
+                var at = Vector2.Lerp(ToVector(a[k]), ToVector(b[k]), t);
+
+                if (touch[k] < 0) Place(k, at);
+                else if (i < touch[k]) Place(k, at, force: true);
+                else Sink(k, shot, touch[k], sunk);
+            }
 
             // Follows the ball that is travelling, which on a foot shot is not
-            // the striker.
-            if (Eye != null && shot.Struck >= 0 && shot.Struck < a.Length)
-                Eye.LookAt(Vector2.Lerp(ToVector(a[shot.Struck]), ToVector(b[shot.Struck]), t));
+            // the striker -- and stays on the peg once it has got there, rather
+            // than following the ball the film has bouncing away from it.
+            if (Eye != null && shot.Struck >= 0 && shot.Struck < n)
+            {
+                int s = shot.Struck;
+                bool staked = touch[s] >= 0 && i >= touch[s];
+                Eye.LookAt(staked ? ToVector(shot.Frames[touch[s]][s])
+                                  : Vector2.Lerp(ToVector(a[s]), ToVector(b[s]), t));
+            }
 
             yield return null;
+        }
+
+        // A ball that met its peg near the end of the stroke is still sinking;
+        // let it finish rather than cutting it off.
+        for (bool going = true; going;)
+        {
+            going = false;
+            for (int k = 0; k < n; k++)
+                if (touch[k] >= 0 && sunk[k] < SinkSeconds)
+                {
+                    Sink(k, shot, touch[k], sunk);
+                    going = true;
+                }
+            if (going) yield return null;
         }
 
         // Settle onto the real state rather than the last frame. A ball that
         // went off the lawn is brought back a mallet's length in by the rules
         // after the rolling stopped, so the truth is in the Game, not the film.
         ShowLive();
+    }
+
+    /// <summary>How long a pegged-out ball takes to sink away against its peg.</summary>
+    const float SinkSeconds = 0.45f;
+
+    /// <summary>
+    /// Holds a pegged-out ball where it met its peg, fading and shrinking a
+    /// little, then gone. The film carries on with it bouncing off the peg, but
+    /// by the rules it left the game on contact, so that is where it stays.
+    /// </summary>
+    void Sink(int k, Replay shot, int frame, float[] sunk)
+    {
+        sunk[k] += Time.deltaTime;
+        float fade = 1f - Mathf.Clamp01(sunk[k] / SinkSeconds);
+        Place(k, ToVector(shot.Frames[frame][k]), force: fade > 0f, fade: fade);
+    }
+
+    /// <summary>
+    /// For each ball, the frame it meets the peg that finished it -- or -1 for
+    /// every ball this stroke did not peg out.
+    ///
+    /// Usually the striker, but not only: a rover driven into its own peg by
+    /// somebody else is finished by that stroke too.
+    /// </summary>
+    int[] StakedAt(Replay shot, int n)
+    {
+        var at = new int[n];
+        for (int k = 0; k < n; k++) at[k] = -1;
+
+        var field = Game.World.Field;
+        double reach = Court.BallRadius + field.PegRadius + 0.005;
+
+        void Find(int ball)
+        {
+            if (ball < 0 || ball >= n || Game.World.Balls[ball].InPlay) return;
+
+            int point = Game.States[ball].Total - 1;
+            if (!field.IsPeg(point)) return;
+
+            var peg = field.PegFor(point);
+            at[ball] = shot.FrameCount - 1;
+
+            for (int f = 0; f < shot.FrameCount; f++)
+                if ((shot.Frames[f][ball] - peg).Length <= reach) { at[ball] = f; return; }
+        }
+
+        if (shot.Result.PeggedOut) Find(shot.Striker);
+
+        foreach (var (ball, point) in shot.Result.OthersScored)
+            if (field.IsPeg(point) && Game.States[ball].Finished) Find(ball);
+
+        return at;
     }
 
     /// <summary>
@@ -633,10 +730,14 @@ public class CroquetGame : MonoBehaviour
         foreach (var r in rims) if (r != null) Destroy(r.gameObject);
         foreach (var s in seats) if (s != null) Destroy(s.gameObject);
         foreach (var g in glints) if (g != null) Destroy(g.gameObject);
+        foreach (var b in bound) if (b != null) Destroy(b.gameObject);
+        foreach (var b in boundRim) if (b != null) Destroy(b.gameObject);
         discs.Clear();
         rims.Clear();
         seats.Clear();
         glints.Clear();
+        bound.Clear();
+        boundRim.Clear();
 
         for (int i = 0; i < count; i++)
         {
@@ -655,6 +756,13 @@ public class CroquetGame : MonoBehaviour
             // be brighter than the ball it sits on.
             glints.Add(Shapes.Piece(root, "Ball " + i + " glint", Shapes.Gloss,
                                     new Color(1, 1, 1, 0.5f), Layer.Gloss));
+
+            // The dark rim is what keeps a white or yellow dot readable on
+            // pale grass.
+            boundRim.Add(Shapes.Piece(root, "Ball " + i + " bound rim", Shapes.Disc,
+                                      new Color(0, 0, 0, 0.6f), Layer.BoundRim));
+            bound.Add(Shapes.Piece(root, "Ball " + i + " bound", Shapes.Disc,
+                                   ColourOf(i), Layer.Bound));
         }
 
         if (marker == null)
@@ -663,6 +771,9 @@ public class CroquetGame : MonoBehaviour
 
         if (target == null)
             target = Shapes.Piece(root, "Target", Shapes.Dashes, targetPaint, Layer.Target);
+
+        if (arrow == null)
+            arrow = Shapes.Piece(root, "Target direction", Shapes.Chevron, targetPaint, Layer.Target);
     }
 
     void LateUpdate()
@@ -671,6 +782,7 @@ public class CroquetGame : MonoBehaviour
         if (Phase != Phase.Rolling) ShowLive();
         ShowMarker();
         ShowTarget();
+        ShowBound();
     }
 
     /// <summary>
@@ -683,7 +795,7 @@ public class CroquetGame : MonoBehaviour
     /// </summary>
     void ShowTarget()
     {
-        if (target == null || Game == null) return;
+        if (target == null || arrow == null || Game == null) return;
 
         var field = Game.World.Field;
         int point = ShownPoint;
@@ -691,6 +803,7 @@ public class CroquetGame : MonoBehaviour
         bool show = Game.Winner == null && Phase != Phase.Paused
                     && !field.IsFinished(point);
         target.gameObject.SetActive(show);
+        arrow.gameObject.SetActive(show);
         if (!show) return;
 
         var at = ToVector(field.TargetFor(point));
@@ -709,6 +822,88 @@ public class CroquetGame : MonoBehaviour
         var paint = targetPaint;
         paint.a *= 0.72f + 0.28f * Mathf.Sin(Time.time * 2.2f) * 0.5f;
         target.color = paint;
+
+        // Which way through. The course runs most hoops both ways at different
+        // stages, so a ring says which hoop and nothing about the direction --
+        // and the direction is the half that decides where to stand. On the
+        // FAR side, pointing out of the hoop: the near side is where the
+        // striker is usually sitting, and a ball there would cover it.
+        int dir = field.IsPeg(point) ? 0 : field.DirectionFor(point);
+        arrow.gameObject.SetActive(dir != 0);
+        if (dir == 0) return;
+
+        float size = d * 0.24f;
+        arrow.transform.localPosition =
+            new Vector3(at.x + dir * d * 0.3f, at.y, arrow.transform.localPosition.z);
+        arrow.transform.localRotation = Quaternion.Euler(0, 0, dir > 0 ? 0f : 180f);
+        arrow.transform.localScale = new Vector3(size, size, 1);
+
+        var tip = paint;
+        tip.a = Mathf.Min(1f, paint.a * 1.3f);
+        arrow.color = tip;
+    }
+
+    /// <summary>
+    /// A small dot in every OTHER ball's colour over the hoop that ball is
+    /// playing for.
+    ///
+    /// Where everyone else is going decides most of where to leave your own
+    /// ball -- in front of their hoop is in their way, near it is handing them
+    /// a roquet -- and nine hoops that look alike give no clue. Balls headed for
+    /// the same hoop sit side by side rather than on top of each other, and
+    /// over the striker's own target they sit clear of its ring.
+    /// </summary>
+    void ShowBound()
+    {
+        if (Game == null || bound.Count == 0) return;
+
+        var field = Game.World.Field;
+        int n = Mathf.Min(bound.Count, Game.World.Balls.Length);
+        if (boundShown.Length < n) boundShown = new bool[n];
+
+        bool live = Game.Winner == null && Phase != Phase.Paused;
+
+        for (int b = 0; b < n; b++)
+        {
+            boundShown[b] = live && b != ShownStriker && Game.World.Balls[b].InPlay
+                            && !field.IsFinished(Game.States[b].Point);
+            bound[b].gameObject.SetActive(boundShown[b]);
+            boundRim[b].gameObject.SetActive(boundShown[b]);
+        }
+
+        float px = Eye == null ? 0.01f : Eye.MetresPerPixel;
+        float dot = 9f * px;
+        float spacing = 12f * px;
+
+        int mine = field.IsFinished(ShownPoint) ? int.MinValue : Where(ShownPoint);
+        float ring = Mathf.Max(1.0f, 26f * px) * 0.5f;     // the striker's target ring
+
+        for (int b = 0; b < n; b++)
+        {
+            if (!boundShown[b]) continue;
+
+            int point = Game.States[b].Point;
+            int key = Where(point);
+
+            int slot = 0, count = 0;
+            for (int o = 0; o < n; o++)
+            {
+                if (!boundShown[o] || Where(Game.States[o].Point) != key) continue;
+                if (o < b) slot++;
+                count++;
+            }
+
+            var at = ToVector(field.TargetFor(point));
+            float lift = (key == mine ? ring : 0f) + 14f * px;
+            var p = at + new Vector2((slot - (count - 1) * 0.5f) * spacing, lift);
+
+            boundRim[b].Put(p.x, p.y, dot * 1.5f, dot * 1.5f);
+            bound[b].Put(p.x, p.y, dot, dot);
+        }
+
+        // Hoops by index and pegs below zero, so the two points that are the
+        // same hoop run opposite ways -- hoop 2 and 1-back -- share one spot.
+        int Where(int pt) => field.IsPeg(pt) ? -1 - field.PegIndexFor(pt) : field.HoopFor(pt);
     }
 
     /// <summary>Draws the balls where the rules currently have them.</summary>
@@ -726,16 +921,31 @@ public class CroquetGame : MonoBehaviour
             Place(Game.Striker, ToVector(StrikerPoint()));
     }
 
-    void Place(int i, Vector2 at)
+    /// <param name="force">
+    /// Draw it even though the rules have already taken it off the lawn -- a
+    /// ball pegging out is out of play the instant the stroke resolves, which
+    /// is before a single frame of it rolling to the peg has been shown.
+    /// </param>
+    /// <param name="fade">1 is a ball on the lawn; toward 0 it sinks away.</param>
+    void Place(int i, Vector2 at, bool force = false, float fade = 1f)
     {
-        bool on = Game.World.Balls[i].InPlay;
+        bool on = force || Game.World.Balls[i].InPlay;
         discs[i].gameObject.SetActive(on);
         rims[i].gameObject.SetActive(on);
         seats[i].gameObject.SetActive(on);
         glints[i].gameObject.SetActive(on);
         if (!on) return;
 
-        float d = BallDiameter;
+        // Set every time rather than once, so a ball that faded out at the peg
+        // cannot come back into a later game still transparent.
+        var paint = ColourOf(i);
+        paint.a = fade;
+        discs[i].color = paint;
+        rims[i].color = new Color(0, 0, 0, 0.45f * fade);
+        seats[i].color = new Color(0, 0, 0, 0.42f * fade);
+        glints[i].color = new Color(1, 1, 1, 0.5f * fade);
+
+        float d = BallDiameter * (0.78f + 0.22f * fade);
         discs[i].Put(at.x, at.y, d, d);
 
         // Two shadows, and they are doing different jobs.

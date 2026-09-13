@@ -40,10 +40,17 @@ public static class Layer
     public const int BallShadow = 9;
     public const int Ball = 10;
     public const int Gloss = 11;
-    public const int Striker = 12;
-    public const int AimRing = 13;
-    public const int AimLine = 14;
-    public const int Mallet = 15;
+
+    // What every OTHER ball is playing for, floating over its hoop. Above the
+    // balls, because a ball parked in front of a hoop must not hide the hint
+    // saying who else wants it.
+    public const int BoundRim = 12;
+    public const int Bound = 13;
+
+    public const int Striker = 14;
+    public const int AimRing = 15;
+    public const int AimLine = 16;
+    public const int Mallet = 17;
 
     /// <summary>
     /// How far towards the camera everything above the turf is lifted, in
@@ -160,15 +167,33 @@ public static class Shapes
                 // Square, because a sprite has ONE pixels-per-unit: a tall thin
                 // texture would come out a tall thin sprite, and Put would then
                 // be stretching something that was never one unit by one.
-                const int size = 64;
-                var t = New(size, size);
+                //
+                // Small, and with no mipmaps, and the ramp is wide -- all three
+                // for one reason. The line is four or five pixels thick on
+                // screen. A 64-texel texture with its soft edge in the outer
+                // 16% was being sampled at four or five points across, and the
+                // soft edge fell between them: what reached the screen was a
+                // hard-edged bar, and a hard bar at a shallow angle breaks into
+                // runs of pixels that read as a wobble rather than a line.
+                // Sixteen texels with the ramp over the outer 45% puts real
+                // samples in the edge at any thickness, and without a mip chain
+                // the width cannot be resolved at a different level depending
+                // on which way the line happens to point.
+                const int size = 16;
+                var t = new Texture2D(size, size, TextureFormat.RGBA32, false)
+                {
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp,
+                    hideFlags = HideFlags.DontSave
+                };
 
                 for (int y = 0; y < size; y++)
                 {
                     // Distance from the middle of the width, 0 at the centre
                     // and 1 at the edge.
                     float off = Mathf.Abs(y + 0.5f - size / 2f) / (size / 2f);
-                    float a = Mathf.Clamp01((1f - off) / 0.16f);
+                    float a = Mathf.Clamp01((1f - off) / 0.45f);
+                    a = a * a * (3f - 2f * a);
 
                     for (int x = 0; x < size; x++) t.SetPixel(x, y, new Color(1, 1, 1, a));
                 }

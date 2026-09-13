@@ -74,7 +74,8 @@ public readonly struct AimGuide
     /// not have; the aim is only as fine as the sighting that set it, so the
     /// line stops where that stops being true.
     /// </summary>
-    public static AimGuide Trace(Game game, int striker, Vector2 from, Vector2 aim, float reach)
+    public static AimGuide Trace(Game game, int striker, Vector2 from, Vector2 aim, float reach,
+                                 int croquetWith = -1)
     {
         var world = game.World;
         float r = (float)world.Spec.BallRadius;
@@ -106,22 +107,50 @@ public readonly struct AimGuide
             meets = Meeting.Ball;
         }
 
-        // The furniture, which stops the line without sending anything on.
+        // The furniture: a hoop's uprights and the pegs. Nothing is sent on, but
+        // the ball comes back off them, and where it goes is worth showing.
+        Vector2 post = Vector2.zero;
+
         foreach (var hoop in world.Field.Hoops)
         {
             float wire = (float)hoop.WireRadius + r;
-            if (Sweep(from, dir, CroquetGame.ToVector(hoop.LeftPost), wire, best, out float tl))
-            { best = tl; hitBall = -1; meets = Meeting.Obstacle; }
-            if (Sweep(from, dir, CroquetGame.ToVector(hoop.RightPost), wire, best, out float tr))
-            { best = tr; hitBall = -1; meets = Meeting.Obstacle; }
+            var left = CroquetGame.ToVector(hoop.LeftPost);
+            var right = CroquetGame.ToVector(hoop.RightPost);
+
+            if (Sweep(from, dir, left, wire, best, out float tl))
+            { best = tl; hitBall = -1; meets = Meeting.Obstacle; post = left; }
+            if (Sweep(from, dir, right, wire, best, out float tr))
+            { best = tr; hitBall = -1; meets = Meeting.Obstacle; post = right; }
         }
 
         foreach (var peg in world.Field.Pegs)
-            if (Sweep(from, dir, CroquetGame.ToVector(peg),
-                      (float)world.Field.PegRadius + r, best, out float tp))
-            { best = tp; hitBall = -1; meets = Meeting.Obstacle; }
+        {
+            var at = CroquetGame.ToVector(peg);
+            if (Sweep(from, dir, at, (float)world.Field.PegRadius + r, best, out float tp))
+            { best = tp; hitBall = -1; meets = Meeting.Obstacle; post = at; }
+        }
 
         var stop = from + dir * best;
+
+        // Off a post, the same bounce Sim.Deflect gives: the normal runs from
+        // the post's centre through the ball's, the part of the velocity going
+        // INTO the post is turned round and cut by the obstacle's restitution,
+        // and everything along its surface is kept. So a glancing touch barely
+        // bends the line and loses almost nothing, while a full hit comes
+        // straight back at a quarter of the roll -- which is why a hoop leg is
+        // a place a ball goes to die.
+        if (meets == Meeting.Obstacle)
+        {
+            var normal = (stop - post).normalized;
+            float into = Vector2.Dot(dir, normal);
+            var off = into < 0
+                ? dir - normal * ((1f + (float)world.Spec.ObstacleRestitution) * into)
+                : dir;
+
+            return new AimGuide(Meeting.Obstacle, stop, -1, default,
+                                off.sqrMagnitude > 1e-6f ? off.normalized : Vector2.zero,
+                                0, off.sqrMagnitude);
+        }
 
         if (hitBall < 0) return new AimGuide(meets, stop, -1, default, default);
 
@@ -134,7 +163,13 @@ public readonly struct AimGuide
 
         float along = Vector2.Dot(dir, n);
         var onward = n;
-        var carries = dir - n * ((1f + e) * along * 0.5f);
+
+        // On a croquet stroke the mallet follows the striker into the other
+        // ball and keeps pushing: Sim hands back a share of the blow along the
+        // line of centres, and so does this, or the guide would show the back
+        // ball stopping dead where the game sends it on.
+        float follow = hitBall == croquetWith ? (float)world.Spec.CroquetFollow : 0f;
+        var carries = dir - n * ((1f + e) * along * 0.5f - follow * along);
 
         // Both balls leave at some fraction of the incoming speed, and each
         // then rolls as the square of it.
@@ -190,6 +225,11 @@ public readonly struct AimGuide
 
         float back = Mathf.Sqrt(Mathf.Max(0, rSq - offSq));
         t = along - back;
+
+        // A hair of slack at the start, for a ball already touching the one in
+        // front -- the croquet stroke -- where rounding can put the contact a
+        // few microns behind the ball it belongs in front of.
+        if (t < 0 && t > -1e-4f) t = 0;
 
         return t >= 0 && t <= limit;
     }

@@ -99,8 +99,8 @@ public class AimControl : MonoBehaviour
     // do about it.
     SpriteRenderer line, contact, onward, carries;
 
-    // The swing: a chevron coming down the line, and the streak behind it.
-    SpriteRenderer swing, streak;
+    // The swing: a chevron coming down the line.
+    SpriteRenderer swing;
 
     float PullSpan => Screen.height * pullSpan;
     float RestGap => Screen.height * restGap;
@@ -188,8 +188,6 @@ public class AimControl : MonoBehaviour
         // A chevron rather than anything ball-shaped: a disc back here reads as
         // a seventh ball sitting behind the striker, which is the one thing it
         // must not look like.
-        streak = Shapes.Piece(root, "Swing streak", Shapes.Fade,
-                              new Color(1f, 0.98f, 0.90f, 0.28f), Layer.AimLine);
         swing = Shapes.Piece(root, "Swing", Shapes.Chevron,
                              new Color(1f, 0.98f, 0.90f), Layer.Mallet);
 
@@ -528,7 +526,7 @@ public class AimControl : MonoBehaviour
         float run = Mathf.Min(AimRadius, AimGuide.ToEdge(game.Court, other, unit));
         var end = other + unit * run;
 
-        float thin = Span * 0.0028f;
+        float thin = Span * 0.0035f;
         align.PutRotated((at + end) * 0.5f,
                          Mathf.Atan2(unit.y, unit.x) * Mathf.Rad2Deg,
                          Vector2.Distance(at, end), thin);
@@ -547,13 +545,16 @@ public class AimControl : MonoBehaviour
     /// </summary>
     void DrawGuide(Vector2 at, Vector2 unit, float angle)
     {
-        float thin = Span * 0.0038f;
+        float thin = Span * 0.0048f;
 
         // A constant length, stopping early only for something actually in the
         // way. The line answers "where" and the meter answers "how hard";
         // tying the two together made the line move while the strength was
         // being set, which is the moment it most needs to hold still.
-        var guide = AimGuide.Trace(game.Game, game.Game.Striker, at, unit, guideReach);
+        int croquet = game.Game.Stroke == StrokeKind.Bonus &&
+                      game.BonusChoice == BonusWay.CroquetShot
+            ? game.Game.RoquetedBall : -1;
+        var guide = AimGuide.Trace(game.Game, game.Game.Striker, at, unit, guideReach, croquet);
         float travel = Vector2.Distance(at, guide.To);
 
         line.gameObject.SetActive(true);
@@ -561,14 +562,43 @@ public class AimControl : MonoBehaviour
 
         bool onto = guide.Hit == AimGuide.Meeting.Ball;
 
+        // Off a hoop upright or a peg the ball comes back, and where it comes
+        // back to is as worth knowing before the stroke as where a struck ball
+        // goes -- a leg of the hoop is the commonest thing to hit in the game.
+        bool bounce = guide.Hit == AimGuide.Meeting.Obstacle
+                      && guide.Carries.sqrMagnitude > 0.5f;
+
         // The ghost: where the ball would be at the moment it arrives.
         contact.gameObject.SetActive(true);
         float d = (float)(game.Court.BallRadius * 2);
         contact.Put(guide.To.x, guide.To.y, d, d);
-        contact.color = onto ? new Color(1, 1, 1, 0.9f) : new Color(1, 1, 1, 0.4f);
+        contact.color = onto || bounce ? new Color(1, 1, 1, 0.9f) : new Color(1, 1, 1, 0.4f);
 
         onward.gameObject.SetActive(onto);
-        carries.gameObject.SetActive(onto);
+        carries.gameObject.SetActive(onto || bounce);
+
+        // Brighter when it is the only thing coming out of the contact.
+        carries.color = bounce ? new Color(1, 1, 1, 0.62f) : new Color(1, 1, 1, 0.34f);
+
+        float budget = Mathf.Max(0.9f, Span * 0.15f);
+
+        // A floor, so the short one still says which way it went. Below about a
+        // ball's width a line is a dot with an opinion.
+        const float least = 0.1f;
+
+        if (bounce)
+        {
+            // As long as the share of its roll the ball keeps: a glancing touch
+            // runs on nearly the full length, a square hit on a leg comes back
+            // at a quarter of it. The same measure the split lines use, so a
+            // stub means the same thing whatever it was that got hit.
+            float back = budget * Mathf.Clamp(guide.CarriesRoll, least, 1f);
+            carries.PutRotated(guide.To + guide.Carries * (back / 2),
+                               Mathf.Atan2(guide.Carries.y, guide.Carries.x) * Mathf.Rad2Deg,
+                               back, thin);
+            return;
+        }
+
         if (!onto) return;
 
         // Where the struck ball goes: along the line of centres, from where it
@@ -589,13 +619,8 @@ public class AimControl : MonoBehaviour
         // how hard it is struck are answered by different instruments, and this
         // one has held still since it stopped trying to answer both.
         var target = CroquetGame.ToVector(game.Game.World.Balls[guide.Struck].Pos);
-        float budget = Mathf.Max(0.9f, Span * 0.15f);
 
         float total = Mathf.Max(1e-4f, guide.OnwardRoll + guide.CarriesRoll);
-
-        // A floor, so the short one still says which way it went. Below about a
-        // ball's width a line is a dot with an opinion.
-        const float least = 0.1f;
         float share = Mathf.Clamp(guide.OnwardRoll / total, least, 1f - least);
 
         float ahead = budget * share;
@@ -617,8 +642,8 @@ public class AimControl : MonoBehaviour
     /// lying across the line of the shot, and it read as a piece of furniture
     /// parked behind the ball rather than as anything about to move. What a
     /// swing actually looks like from up here is the head coming down the line,
-    /// so that is what this is -- a head drawn back with the stroke's path
-    /// trailing behind it, and on release it travels.
+    /// so that is what this is -- a head drawn back along the line, and on
+    /// release it travels.
     /// </summary>
     void DrawSwing(Vector2 at, Vector2 unit, float angle, float pullPx)
     {
@@ -634,14 +659,9 @@ public class AimControl : MonoBehaviour
         swing.color = Color.Lerp(new Color(0.96f, 0.94f, 0.88f, 0.55f),
                                  new Color(1f, 0.99f, 0.93f, 1f), hard);
 
-        // The path it has been drawn back along, running out behind it and
-        // gone by the time it reaches the top of the swing.
-        float back = Vector2.Distance(at, head);
-
-        streak.gameObject.SetActive(back > size * 0.6f);
-        streak.PutFrom(head - unit * (size * 0.35f), angle + 180f,
-                       Mathf.Max(0.01f, back - size * 0.35f), size * 0.40f);
-        streak.color = new Color(1f, 0.98f, 0.90f, 0.10f + 0.26f * hard);
+        // No trail behind it. There was a streak back along the path it had
+        // been drawn over, and it read as a second line on the lawn -- right
+        // beside the aim line, which is the one line that has to be read.
     }
 
     /// <summary>
@@ -685,7 +705,6 @@ public class AimControl : MonoBehaviour
         onward.gameObject.SetActive(false);
         carries.gameObject.SetActive(false);
         swing.gameObject.SetActive(false);
-        streak.gameObject.SetActive(false);
     }
 
     void Hide()

@@ -50,6 +50,32 @@ namespace Croquet.Core
         /// <summary>Substep counter, so events can be ordered against each other.</summary>
         public int Step;
 
+        /// <summary>
+        /// The two balls of a croquet stroke, striker first, or -1 when this shot
+        /// is not one. Their first contact gets the mallet's follow-through; see
+        /// <see cref="CourtSpec.CroquetFollow"/>.
+        /// </summary>
+        public int CroquetStriker = -1, CroquetOther = -1;
+
+        /// <summary>Whether that first contact has happened, so it is given once.</summary>
+        internal bool CroquetSpent;
+
+        /// <summary>
+        /// Marks this shot as a croquet stroke between these two. Call it AFTER
+        /// <see cref="ClearShot"/>, which forgets it.
+        /// </summary>
+        public void TakeCroquet(int striker, int other)
+        {
+            CroquetStriker = striker;
+            CroquetOther = other;
+            CroquetSpent = false;
+        }
+
+        internal bool IsCroquetPair(int a, int b) =>
+            !CroquetSpent && CroquetStriker >= 0 &&
+            ((a == CroquetStriker && b == CroquetOther) ||
+             (a == CroquetOther && b == CroquetStriker));
+
         // Only the first touch of each pair is an event. A ball resting against
         // another re-collides every substep, and a rules layer asking "what did
         // the striker hit first" does not want that noise.
@@ -70,6 +96,8 @@ namespace Croquet.Core
         {
             Events.Clear();
             Step = 0;
+            CroquetStriker = CroquetOther = -1;
+            CroquetSpent = false;
             for (int b = 0; b < Balls.Length; b++)
             {
                 Balls[b].WentOut = false;

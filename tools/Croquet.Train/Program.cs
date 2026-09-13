@@ -66,11 +66,21 @@ switch (command)
         // it beats itself -- and the answer is fifty per cent for ever, which
         // looks exactly like training having achieved nothing.
         var learned = Load(path);
-        Console.WriteLine($"{Path.GetFileName(path)} vs the hand-tuned original, " +
-                          $"{games} games\n");
+
+        // --against default asks the question that decides ADOPTION: does this
+        // beat what the game ships today? Beating the hand-tuned originals only
+        // says it is not worse than a guess, which the shipped set already
+        // cleared by 73% -- a retrain that drifted backwards would pass that
+        // test comfortably.
+        bool vsDefault = Arg("against", "") == "default";
+        var baseline = vsDefault ? BotWeights.Default : BotWeights.HandTuned;
+
+        Console.WriteLine($"{Path.GetFileName(path)} vs " +
+                          (vsDefault ? "the shipped default" : "the hand-tuned original") +
+                          $", {games} games\n");
 
         var clock = Stopwatch.StartNew();
-        var r = Duel.Series(learned, BotWeights.HandTuned, games, 500_000);
+        var r = Duel.Series(learned, baseline, games, 500_000);
         clock.Stop();
 
         Console.WriteLine($"{r}   in {clock.Elapsed.TotalSeconds:0}s");

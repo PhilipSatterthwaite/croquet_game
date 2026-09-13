@@ -277,6 +277,10 @@ namespace Croquet.Core
 
             World.ClearShot();
 
+            // A croquet stroke is two balls struck as one: the mallet is still
+            // on the striker when it meets the other ball. See CourtSpec.CroquetFollow.
+            if (way == BonusWay.CroquetShot) World.TakeCroquet(Striker, other);
+
             // A foot shot pins the striker under a foot, so all of it goes into
             // the other ball. Driving that ball directly, rather than modelling
             // a very heavy follow-through, is what leaves the striker exactly

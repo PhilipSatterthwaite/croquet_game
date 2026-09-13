@@ -96,6 +96,10 @@ namespace Croquet.Core
             h = Mix(h, Bits(c.BoundaryReturn));
             h = Mix(h, Bits(c.MalletHead));
             h = Mix(h, Bits(c.MalletLength));
+
+            // It moves where a croquet stroke's back ball stops, so two ends
+            // that disagree about it are playing on different lawns.
+            h = Mix(h, Bits(c.CroquetFollow));
             return h;
         }
 

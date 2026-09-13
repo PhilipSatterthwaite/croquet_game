@@ -365,6 +365,32 @@ namespace Croquet.Core.Tests
         }
 
         [Fact]
+        public void The_mallet_carries_the_striker_on_through_a_croquet_stroke()
+        {
+            // The same croquet stroke with and without the follow-through. It is
+            // given to the striker alone, so the ball in front must finish on the
+            // identical double -- and the striker must go a good deal further.
+            // Built against two settings of the one constant rather than a
+            // distance, so tuning the feel never turns this red.
+            var plain = AfterRoquet();
+            var carried = AfterRoquet();
+            plain.World.Spec.CroquetFollow = 0;
+            carried.World.Spec.CroquetFollow = 0.3;
+
+            var start = plain.BonusPlacement(BonusWay.CroquetShot, new Vec2(-1, 0));
+
+            plain.PlayBonus(BonusWay.CroquetShot, new Vec2(-1, 0), new Vec2(1, 0), 3.0);
+            carried.PlayBonus(BonusWay.CroquetShot, new Vec2(-1, 0), new Vec2(1, 0), 3.0);
+
+            Assert.Equal(plain.World.Balls[1].Pos, carried.World.Balls[1].Pos);
+
+            double bare = (plain.World.Balls[0].Pos - start).Length;
+            double pushed = (carried.World.Balls[0].Pos - start).Length;
+            Assert.True(pushed > bare * 2,
+                        $"the striker should follow on: {pushed:0.000} m against {bare:0.000} m");
+        }
+
+        [Fact]
         public void A_foot_shot_sends_the_other_ball_and_holds_the_striker()
         {
             var g = AfterRoquet();

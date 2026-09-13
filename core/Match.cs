@@ -53,6 +53,7 @@ namespace Croquet.Core
             Friction = c.Friction,
             Restitution = c.Restitution,
             ObstacleRestitution = c.ObstacleRestitution,
+            CroquetFollow = c.CroquetFollow,
             SleepSpeed = c.SleepSpeed,
             BoundaryReturn = c.BoundaryReturn,
             MalletHead = c.MalletHead,

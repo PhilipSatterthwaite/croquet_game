@@ -82,29 +82,42 @@ namespace Croquet.Core
         /// * **Losing the turn was double-counted.** It is the one number that
         ///   went DOWN, by a third: the positional terms already carry what a
         ///   lost turn costs, so the flat penalty on top was charging twice.
+        ///
+        /// **Retrained once the search could convert a roquet.** The first set
+        /// was learned while the bot could not see the croquet shot or value the
+        /// strokes a roquet buys, so it was knowingly stale. A second run under
+        /// the fixed search, interrupted part way, then played the first set
+        /// head to head: **58.3% over 400 games** (95% confident: 53.4% to
+        /// 63.0%). Against the set it replaced, not against the hand-tuned
+        /// guesses -- beating those is a bar the old set already cleared by 73%.
+        ///
+        /// The flat bonus for a roquet fell from 640 to 375. The likely reading
+        /// is that the free plies now score the two strokes a roquet earns, so a
+        /// large flat bonus on top was counting them twice -- but that is an
+        /// interpretation, and the measurement is only the win rate.
         /// </summary>
         public static BotWeights Default => new BotWeights(new double[]
         {
             1200,       // hoop -- pinned; every other number is read against it
-            1664.59,    // partnerScored
-            2907.49,    // opponentScored
-            10629.04,   // peggedOut
-            640.19,     // roquet
-            469.42,     // turnEnded
-            1390.37,    // wentOut
-            39.49,      // toPoint
-            1127.03,    // inFront
-            5.6507,     // inFrontDepth
-            0.9606,     // inFrontWidth
-            24.04,      // toNearest
-            12.3771,    // nearestCap
-            101.39,     // partnerCloser
-            62.59,      // opponentCloser
-            1.891,      // shoveCap
-            985.52,     // partnerSentOff
-            674.15,     // wastedShot
-            0.5246,     // edgeBand
-            326.24      // edgePenalty
+            1684.2557,  // partnerScored
+            2899.3314,  // opponentScored
+            13829.2669, // peggedOut
+            374.7699,   // roquet
+            630.719,    // turnEnded
+            1894.8499,  // wentOut
+            57.1192,    // toPoint
+            1072.9582,  // inFront
+            8.3475,     // inFrontDepth
+            0.7639,     // inFrontWidth
+            29.9134,    // toNearest
+            9.0311,     // nearestCap
+            135.1622,   // partnerCloser
+            57.4843,    // opponentCloser
+            1.6821,     // shoveCap
+            1486.9752,  // partnerSentOff
+            891.4685,   // wastedShot
+            0.6823,     // edgeBand
+            546.2455    // edgePenalty
         });
 
         /// <summary>

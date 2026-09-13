@@ -126,6 +126,24 @@ that a stroke struck for `d` travels `d`, and that the frames take `v/a`
 seconds to play it. Both are feel-independent — they hold at any friction — so
 tuning never turns them red.
 
+**A croquet stroke is two balls struck as one, not two balls colliding.** The
+mallet is still on the back ball when it meets the front one, and it keeps
+pushing. Played as a plain collision at a restitution of 0.8, the back ball kept a
+tenth of its speed and so a hundredth of the distance, and every croquet stroke
+read as the striker stopping dead. `CourtSpec.CroquetFollow` (0.2) hands the back
+ball a share of the blow back along the line of centres, on that first contact
+only: a straight drive now leaves it about a ninth of the front ball's roll. The
+front ball goes exactly where it always did, and a thin split, which puts little
+of the blow into the other ball, gets little of it back.
+
+`World.TakeCroquet` marks the pair, and both the rules and `Replay` set it, or the
+film would leave the striker short of where it stopped and it would jump on the
+last frame. `AimGuide` adds the same push, so the split lines agree with the
+game. `GameTests.The_mallet_carries_the_striker_on_through_a_croquet_stroke` holds
+both halves without naming a distance — the front ball on the identical double
+with and without it, the striker a good deal further with — and
+`ReplayTests.A_croquet_stroke_lands_where_the_rules_put_it` holds the film to it.
+
 Feel is tuned by hand, repeatedly, from real play. **Tests must build their own
 `CourtSpec`** rather than relying on the defaults, so a tuning pass never turns
 the suite red. Assert things that hold for any feel — energy leaves the system,
@@ -476,11 +494,22 @@ the budget. Free plies run COARSE (fewer sweep angles and placements), because
 they answer one question — what is this roquet worth — and a cheap answer to it
 beats a fine one costing four times as much.
 
-**The shipped weights are therefore stale**, and knowingly so. `roquet = 640`
-was learned in a world where a roquet really was nearly worthless, because the
-bot could not convert one. They still beat the hand-tuned original 72.5% over
-200 games under the new search, so they are not wrong — but retraining now that
-roquets are worth something is the obvious next run.
+**They were retrained once the search could convert a roquet, and the retrain
+is what ships.** `roquet = 640` had been learned in a world where a roquet really
+was nearly worthless, because the bot could not convert one. A second run under
+the fixed search — stopped part way, which is a normal way for it to end — then
+played the first set head to head: **58.3% over 400 games** (95% confidence:
+53.4–63.0%).
+
+That comparison has to be against the set being replaced, not against the
+hand-tuned guesses, which is why `match --against default` exists. The old set
+already beat the guesses by 73%, so a retrain that had drifted backwards would
+have passed that test comfortably and told nobody anything.
+
+The flat bonus for a roquet fell from 640 to 375. The likely reading is that the
+free plies now score the two strokes a roquet earns, so a big flat bonus on top
+was counting them twice — but that is an interpretation, and the measurement is
+only the win rate.
 
 ### The value net, and why it lost every game
 
@@ -849,7 +878,7 @@ What is left is what the lawn genuinely cannot show:
 - **The power bar**, always in the same corner, and with no words in it at all.
   A gauge that moves about is one you have to find before you can read it. It
   takes the striker's colour, so it says whose stroke it is without spending a
-  word. It is marked off in ten divisions of the *pull*, rising from the bottom
+  word. It is marked off in ten divisions of the *stroke*, rising from the bottom
   edge like a ruler with the midpoint running the whole way up, and they flip
   from light to dark as the fill passes them — a white scale vanishes under a
   white ball's bar exactly when the low divisions are being read.
@@ -871,6 +900,14 @@ What is left is what the lawn genuinely cannot show:
   fifth of the screen, not a third. A long sweep is what you want when the
   gesture itself has to carry the precision; it does not, because the scale can
   be read while the thumb is still down.
+
+  **The fill is linear in the stroke; the drag is not.** Half the bar is half a
+  full-length roll and every tick is a tenth of one, while `rollCurve` still
+  squares the drag underneath, so the fill creeps at the start of a pull and
+  races at the end — which is exactly where the precision is and is not. It used
+  to follow the drag, which made the ticks a ruler for the thumb rather than for
+  the ball. It is 460 wide rather than 300, because the short strokes now live in
+  its first few divisions and want the room.
 
   It shows **one** quantity: your own pull. It used to double as the machine's
   search progress, which swept the whole bar in about a tenth of a second and
@@ -957,6 +994,17 @@ carries an alpha ramp across its width, so the edge is soft in the texture
 before it is ever turned, and the ramp scales with the thickness so it stays
 about a pixel at any size. MSAA is on (4×) in `UniversalRP.asset` for the same
 reason, and it covers every other rotated piece.
+
+**The ramp also has to be something the screen can sample.** The line is four or
+five pixels thick. The first line sprite was a 64-texel texture with its soft
+edge in the outer 16% and a full mip chain, so those few pixels sampled it at a
+handful of points and the soft edge fell between them — what reached the screen
+was a hard bar again, and a hard bar at a shallow angle breaks into runs of
+pixels that read as a wobble. It is sixteen texels now, with no mips and the ramp
+over the outer 45%, drawn a little thicker to make up the width. Ruled out first,
+by measuring rather than arguing: the sprite mesh (four vertices, a plain
+rectangle, whether Tight or FullRect), render scale (1), MSAA (on, 4×) and the
+Game view (drawing at its native size).
 
 **Every sprite must be one unit by one unit**, because `Put` scales it to a
 size in metres and a sprite has only one pixels-per-unit. The first `Shapes.Line`
@@ -1104,6 +1152,29 @@ and those two properties hold it for as long as the shot is on screen. The
 stroke report is held back the same way, for the same reason.
 
 `ReplayTests.A_replay_remembers_the_point_the_stroke_was_for` guards it.
+
+**The ring says which hoop; a chevron says which way.** The course runs most
+hoops both ways at different stages, so a ring alone leaves unsaid the half that
+decides where to stand. The chevron sits inside the ring on the FAR side,
+pointing out through the hoop: the near side is where the striker is usually
+standing, and a ball there would cover it.
+
+**Every other ball's hoop is marked too**, with a small dot in that ball's colour
+floating over it on a dark rim — the rim is what keeps white and yellow readable
+on pale grass. Where the others are going decides most of where to leave your own
+ball, and nine hoops that look alike give no clue. Balls bound for the same hoop
+sit side by side, grouped by hoop rather than by course point so that hoop 2 and
+1-back share one spot, and over the striker's own target they sit clear of its
+ring. They draw above the balls (`Layer.Bound`), because a ball parked in front
+of a hoop must not hide who else wants it.
+
+**A ball that pegs out is seen to get there.** The rules take it off the lawn the
+instant the stroke resolves — before a frame of it rolling has been drawn — so it
+used to vanish the moment it was struck. `CroquetGame.StakedAt` finds the frame it
+actually meets its peg; it rolls there, then sinks away against the peg over
+`SinkSeconds` while the camera stays on it. The film carries on with it bouncing
+off the peg, and that is ignored from the contact onward, because by the rules
+it left the game there.
 
 ### Honest positions, legible sizes
 
@@ -1262,8 +1333,10 @@ There is no mallet drawn. Seen from directly above a mallet is a bar lying
 across the line of the shot, and it read as a piece of furniture parked behind
 the ball rather than as anything about to move. What a swing looks like from up
 here is the head coming down the line — so it is a **chevron** drawn back along
-the aim with a streak trailing behind it, and on release it travels into the
-ball before the shot is played. Not a disc: anything ball-shaped back there
+the aim, and on release it travels into the ball before the shot is played. It
+had a streak trailing back along the path it was drawn over, and that went: it
+read as a second line on the lawn, right beside the aim line, which is the one
+line that has to be read. Not a disc: anything ball-shaped back there
 reads as a seventh ball. `Shapes.Chevron` is one tapered sprite rather than two
 rotated bars, which meet at a hard corner and hold their thickness the whole way
 out — the difference between something moving and a piece of clip art.
@@ -1300,6 +1373,14 @@ angles to it plus what the restitution left. Both come out of the same numbers
 the simulation uses. If the guide ever disagrees with what happens, one of the
 two is wrong and it is worth finding out which — which is the point of not
 approximating it.
+
+**It shows the rebound off a hoop leg or a peg** the same way. `Sim.Deflect` turns
+round the part of the velocity going into the post, cut by
+`ObstacleRestitution`, and keeps everything along its surface; `AimGuide` does the
+same sum, and the line out of the contact is as long as the share of the roll the
+ball keeps. A glancing touch runs on at nearly full length and a square hit on a
+leg comes back at a quarter of it — the same measure the split lines use, so a
+stub means the same thing whatever was hit.
 
 **The two lines out of a contact are lengthened by the split of the blow.**
 `AimGuide.OnwardRoll` and `CarriesRoll` are how far each ball rolls afterwards

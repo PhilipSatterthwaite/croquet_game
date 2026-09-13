@@ -41,6 +41,26 @@ namespace Croquet.Core
         public double ObstacleRestitution = 0.5;
 
         /// <summary>
+        /// How much further the back ball of a croquet stroke is pushed than a
+        /// plain collision would leave it, as a share of the speed it drove into
+        /// the front ball.
+        ///
+        /// Two balls in contact struck as one are not two balls colliding. The
+        /// mallet is still on the back ball when it meets the front one, and it
+        /// keeps pushing -- so in a real croquet stroke the back ball travels a
+        /// fair way, where an ordinary collision at a restitution of 0.8 leaves
+        /// it a tenth of its speed and so a hundredth of the distance. At 0.2
+        /// a straight drive leaves the back ball three tenths of its speed, about
+        /// a ninth of the front ball's roll.
+        ///
+        /// Added only along the line of centres and only on that first contact,
+        /// so the front ball goes exactly where it always did, and a thin split
+        /// -- which puts little of the blow into the other ball -- gets little
+        /// of it back.
+        /// </summary>
+        public double CroquetFollow = 0.2;
+
+        /// <summary>
         /// Below this speed a ball is treated as stopped, in metres per second.
         /// Without it, friction leaves balls creeping forever at ever-smaller
         /// velocities and a turn never ends.

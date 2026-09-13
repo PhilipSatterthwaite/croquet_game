@@ -140,7 +140,27 @@ namespace Croquet.Core
                 for (int j = i + 1; j < balls.Length; j++)
                 {
                     if (!balls[j].InPlay) continue;
-                    if (ResolvePair(ref balls[i], ref balls[j], c)) w?.NoteContact(i, j);
+                    if (!ResolvePair(ref balls[i], ref balls[j], c, out Vec2 n, out double hit))
+                        continue;
+
+                    w?.NoteContact(i, j);
+
+                    // A croquet stroke is two balls struck as ONE, and the mallet
+                    // is still on the back ball when it meets the front one. So on
+                    // that first contact the back ball is pushed on along the line
+                    // of centres by a share of what it drove into the front ball.
+                    // The front ball is untouched by it; only how far the striker
+                    // follows changes. Once, whatever the contact was.
+                    if (w != null && w.IsCroquetPair(i, j))
+                    {
+                        if (hit > 0)
+                        {
+                            Vec2 push = n * (c.CroquetFollow * hit);
+                            if (i == w.CroquetStriker) balls[i].Vel += push;
+                            else balls[j].Vel -= push;
+                        }
+                        w.CroquetSpent = true;
+                    }
                 }
             }
 
@@ -276,16 +296,25 @@ namespace Croquet.Core
             }
         }
 
-        /// <summary>Returns true if the two were in contact this substep.</summary>
-        static bool ResolvePair(ref Ball a, ref Ball b, CourtSpec c)
+        /// <summary>
+        /// Returns true if the two were in contact this substep.
+        /// <paramref name="n"/> points from a to b, and <paramref name="hit"/> is
+        /// how fast they were closing along it before the impulse -- zero if they
+        /// were already parting.
+        /// </summary>
+        static bool ResolvePair(ref Ball a, ref Ball b, CourtSpec c,
+                                out Vec2 n, out double hit)
         {
+            n = Vec2.Zero;
+            hit = 0;
+
             Vec2 delta = b.Pos - a.Pos;
             double distSq = delta.LengthSq;
             double min = c.BallRadius * 2;
             if (distSq >= min * min || distSq <= 0) return false;
 
             double dist = Math.Sqrt(distSq);
-            Vec2 n = delta / dist;
+            n = delta / dist;
 
             // Push them apart before the impulse, or the next substep starts
             // with them still interpenetrating and they stick together.
@@ -295,6 +324,8 @@ namespace Croquet.Core
 
             double closing = (b.Vel - a.Vel).Dot(n);
             if (closing > 0) return true;   // already separating; the overlap was enough
+
+            hit = -closing;
 
             // Equal masses, so the impulse splits evenly.
             double jImpulse = -(1 + c.Restitution) * closing * 0.5;
