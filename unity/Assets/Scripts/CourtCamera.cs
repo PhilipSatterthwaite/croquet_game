@@ -41,6 +41,35 @@ public class CourtCamera : MonoBehaviour
     Vector2 target;
     bool placed;
 
+    /// <summary>
+    /// Whether a person has taken the view, so the game stops steering it.
+    ///
+    /// While a shot plays the game points the camera at the moving ball every
+    /// frame, and a look around was only ever an offset from that -- so the
+    /// view went on chasing the ball wherever you dragged it. Once taken, the
+    /// game's own requests to look somewhere are ignored until the next stroke
+    /// gives the view back with <see cref="Release"/>.
+    /// </summary>
+    public bool Held { get; private set; }
+
+    /// <summary>
+    /// Takes the view from the game, from exactly where it is now: the current
+    /// look-around is folded into the target, so taking it causes no jump.
+    /// </summary>
+    public void Take()
+    {
+        if (Held) return;
+        target = (Vector2)transform.position - pan;
+        Held = true;
+    }
+
+    /// <summary>Hands the view back to the game and clears any look-around.</summary>
+    public void Release()
+    {
+        Held = false;
+        pan = Vector2.zero;
+    }
+
     void Awake()
     {
         cam = GetComponent<Camera>();
@@ -66,6 +95,9 @@ public class CourtCamera : MonoBehaviour
 
     public void LookAt(Vector2 p, bool snap = false)
     {
+        // A person holding the view outranks the game following the ball. A
+        // snap is a new game or a fresh court, and always wins.
+        if (Held && !snap) return;
         target = p;
         if (snap) Apply(1f);
     }

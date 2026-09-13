@@ -307,7 +307,7 @@ public class CroquetGame : MonoBehaviour
         if (Eye != null)
         {
             Eye.zoom = playZoom;
-            Eye.pan = Vector2.zero;
+            Eye.Release();
             Eye.Watch(Court);
             Eye.LookAt(Game.World.Balls[Game.Striker].Pos, snap: true);
         }
@@ -370,7 +370,9 @@ public class CroquetGame : MonoBehaviour
         pending = null;
         BonusChoice = null;
 
-        if (Eye != null) Eye.LookAt(StrikerPoint());
+        // A new stroke gives the view back: whatever was being looked at while
+        // the last shot played, the next one starts at the ball.
+        if (Eye != null) { Eye.Release(); Eye.LookAt(StrikerPoint()); }
 
         while (pending == null)
         {
@@ -396,7 +398,7 @@ public class CroquetGame : MonoBehaviour
         var bot = BotFor(Game.Striker);
         Thinking = bot;
 
-        if (Eye != null) Eye.LookAt(StrikerPoint());
+        if (Eye != null) { Eye.Release(); Eye.LookAt(StrikerPoint()); }
 
         // Searched on a worker thread: a stroke takes about a hundred
         // milliseconds, which is six dropped frames if it runs on the main one.

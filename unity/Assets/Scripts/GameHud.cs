@@ -232,19 +232,19 @@ public class GameHud : MonoBehaviour
     /// three, they read in playing order. A fixed slot per ball left a lone chip
     /// stranded partway along an empty bar.
     ///
-    /// Top centre, dropped just below the Menu button. Six pairs side by side
-    /// come to about 680 units, and the free stretch of the top edge between
-    /// the power bar and the Menu button is under 300 either side of centre on
-    /// a 16:9 screen -- less on a 4:3 tablet -- so on the top line itself the
-    /// strip would run under one or the other. One line down, nothing is in its
-    /// way at any shape of screen.
+    /// In line with the power bar, starting just to the right of it, so the top
+    /// edge reads as one strip of instruments. Where the screen is too narrow
+    /// for it to clear the Menu button it is scaled down to fit rather than
+    /// running under the button -- see <see cref="FitDeadness"/>.
     /// </summary>
     void BuildDeadness()
     {
         deadPanel = Ui.Rect(canvas.transform, "Deadness");
-        deadPanel.anchorMin = deadPanel.anchorMax = new Vector2(0.5f, 1);
-        deadPanel.pivot = new Vector2(0.5f, 1);
-        deadPanel.anchoredPosition = new Vector2(0, -(18 + 36 + 8));   // below the Menu button
+        deadPanel.anchorMin = deadPanel.anchorMax = new Vector2(0, 1);
+        deadPanel.pivot = new Vector2(0, 0.5f);
+
+        // Level with the power bar's middle, just past its right-hand end.
+        deadPanel.anchoredPosition = new Vector2(DeadLeft, -(18 + 20 / 2f));
         deadPanel.sizeDelta = new Vector2(0, Square);
 
         // The pairs laid side by side rather than stacked, and the strip sized
@@ -306,6 +306,26 @@ public class GameHud : MonoBehaviour
 
     const float Square = 18f, RowGap = 6f, Chip = 12f, ChipGap = 3f, BarPad = 3f, Border = 2f,
                 UnitGap = 14f;
+
+    /// <summary>Where the strip starts: the power bar's margin and width, and a gap.</summary>
+    const float DeadLeft = 18 + 460 + 16;
+
+    /// <summary>What the Menu button takes off the right-hand end: its margin, width and a gap.</summary>
+    const float MenuRoom = 18 + 96 + 16;
+
+    /// <summary>
+    /// Scales the strip down when the space between the power bar and the Menu
+    /// button is narrower than it is. On a 16:9 screen that space is about 625
+    /// canvas units against a strip of about 680; on a wider phone it fits at
+    /// full size and this leaves it alone.
+    /// </summary>
+    void FitDeadness()
+    {
+        float room = ((RectTransform)canvas.transform).rect.width - DeadLeft - MenuRoom;
+        float wide = LayoutUtility.GetPreferredWidth(deadPanel);
+        float s = wide > 1f && room < wide ? Mathf.Max(0.4f, room / wide) : 1f;
+        deadPanel.localScale = new Vector3(s, s, 1f);
+    }
 
     /// <summary>The bar behind the chips: light enough that a black ball shows on it.</summary>
     static readonly Color BarGrey = new Color(0.84f, 0.84f, 0.82f, 0.92f);
@@ -506,6 +526,8 @@ public class GameHud : MonoBehaviour
     /// </summary>
     void Deadness()
     {
+        FitDeadness();
+
         var g = game.Game;
         int count = g.World.Balls.Length;
 

@@ -199,7 +199,7 @@ public static class Shapes
                 }
 
                 t.Apply();
-                line = Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size), "Line");
+                line = Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size, 0, SpriteMeshType.FullRect), "Line");
             }
             return line;
         }
@@ -291,7 +291,7 @@ public static class Shapes
                 }
 
             t.Apply();
-            sphere = Named(Sprite.Create(t, new Rect(0, 0, Res, Res), Half, Res), "Sphere");
+            sphere = Named(Sprite.Create(t, new Rect(0, 0, Res, Res), Half, Res, 0, SpriteMeshType.FullRect), "Sphere");
             return sphere;
         }
     }
@@ -355,7 +355,7 @@ public static class Shapes
                 }
 
             t.Apply();
-            cylinder = Named(Sprite.Create(t, new Rect(0, 0, Res, Res), Half, Res), "Cylinder");
+            cylinder = Named(Sprite.Create(t, new Rect(0, 0, Res, Res), Half, Res, 0, SpriteMeshType.FullRect), "Cylinder");
             return cylinder;
         }
     }
@@ -413,7 +413,7 @@ public static class Shapes
                 }
 
             t.Apply();
-            wood = Named(Sprite.Create(t, new Rect(0, 0, Res, Res), Half, Res), "Wood");
+            wood = Named(Sprite.Create(t, new Rect(0, 0, Res, Res), Half, Res, 0, SpriteMeshType.FullRect), "Wood");
             return wood;
         }
     }
@@ -756,7 +756,7 @@ public static class Shapes
                 }
 
             t.Apply();
-            chevron = Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size), "Chevron");
+            chevron = Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size, 0, SpriteMeshType.FullRect), "Chevron");
             return chevron;
         }
     }
@@ -808,7 +808,7 @@ public static class Shapes
                 }
 
             t.Apply();
-            triangle = Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size), "Triangle");
+            triangle = Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size, 0, SpriteMeshType.FullRect), "Triangle");
             return triangle;
 
             // Signed distance from the line a->b, positive inside a triangle
@@ -911,7 +911,7 @@ public static class Shapes
                 }
 
             t.Apply();
-            gloss = Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size), "Gloss");
+            gloss = Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size, 0, SpriteMeshType.FullRect), "Gloss");
             return gloss;
         }
     }
@@ -947,7 +947,7 @@ public static class Shapes
                 }
 
             t.Apply();
-            shadow = Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size), "Shadow");
+            shadow = Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size, 0, SpriteMeshType.FullRect), "Shadow");
             return shadow;
         }
     }
@@ -981,11 +981,27 @@ public static class Shapes
         }
     }
 
+    /// <summary>
+    /// The pivot every sprite here is made with.
+    ///
+    /// And every sprite here is made <c>SpriteMeshType.FullRect</c>, never
+    /// Unity's default. Left to itself <c>Sprite.Create</c> cuts a sprite down
+    /// to a polygon hugging its opaque pixels -- a ball, a peg and a hoop post
+    /// each came out a 76-vertex outline -- and the edge on screen is then that
+    /// polygon: a hard geometric edge only multisampling can smooth, trimming
+    /// off the soft rim the texture carries. Zoomed out, where the mip chain
+    /// spreads that rim outward, the polygon clips it harder still. A full
+    /// rectangle is four corners, and the texture's own alpha is the edge.
+    /// </summary>
     static readonly Vector2 Half = new Vector2(0.5f, 0.5f);
 
     static Texture2D New(int w, int h, bool repeat = false) => new Texture2D(w, h)
     {
-        filterMode = FilterMode.Bilinear,
+        // Trilinear, so a sprite shrinking through the zoom blends between
+        // mip levels rather than stepping from one to the next -- which reads
+        // as an edge changing shape, a notch at a time, as the view comes in
+        // and out.
+        filterMode = FilterMode.Trilinear,
 
         // Clamp by default, or a feathered edge samples the far side of itself.
         // Grass is the exception: it is laid down as a tile and has to meet.
@@ -1019,7 +1035,7 @@ public static class Shapes
             }
 
         t.Apply();
-        return Sprite.Create(t, new Rect(0, 0, size, size), Half, size);
+        return Sprite.Create(t, new Rect(0, 0, size, size), Half, size, 0, SpriteMeshType.FullRect);
     }
 
     /// <summary>
@@ -1062,7 +1078,7 @@ public static class Shapes
             }
 
         t.Apply();
-        return Sprite.Create(t, new Rect(0, 0, size, size), Half, size);
+        return Sprite.Create(t, new Rect(0, 0, size, size), Half, size, 0, SpriteMeshType.FullRect);
     }
 
     /// <summary>

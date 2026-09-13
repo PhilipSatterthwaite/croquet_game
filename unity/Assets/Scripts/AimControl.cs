@@ -205,10 +205,14 @@ public class AimControl : MonoBehaviour
 
         Look();
 
+        // Not your turn to aim -- a shot rolling, or the machine's turn -- so a
+        // drag on the lawn can only mean looking around.
+        if (robot || swinging || !game.WaitingForYou) Watch();
+
         if (robot || swinging) return;           // a stroke is under way; hands off
 
         if (game.WaitingForYou) Hand();
-        else { drag = Drag.None; Hide(); }
+        else { Hide(); }
     }
 
     // ---- looking around ---------------------------------------------------
@@ -220,12 +224,18 @@ public class AimControl : MonoBehaviour
 
         float wheel = mouse.scroll.ReadValue().y;
         if (Mathf.Abs(wheel) > 0.01f)
+        {
+            // Zooming while a shot plays or the machine is at the ball takes
+            // the view, or the next frame's follow drags it straight back.
+            if (!game.WaitingForYou || robot || swinging) eye.Take();
             eye.Zoom(wheel > 0 ? zoomStep : 1f / zoomStep);
+        }
 
         // Right-drag looks around. Allowed at any time, including mid-shot and
         // after the game is over: it changes nothing about the game.
         if (mouse.rightButton.wasPressedThisFrame)
         {
+            if (!game.WaitingForYou || robot || swinging) eye.Take();
             drag = Drag.Panning;
             panFrom = mouse.position.ReadValue();
         }
@@ -236,6 +246,38 @@ public class AimControl : MonoBehaviour
             panFrom = now;
         }
         else if (drag == Drag.Panning && !mouse.rightButton.isPressed)
+        {
+            drag = Drag.None;
+        }
+    }
+
+    /// <summary>
+    /// A plain drag on the lawn while it is not your turn to aim looks around.
+    ///
+    /// Nothing else can be meant by it then -- there is no stroke to line up --
+    /// and it is the only way to look around on a phone, which has no right
+    /// button. It takes the view from the game, so the camera stops following
+    /// the ball until the next stroke. A drag begun on a button is left alone.
+    /// </summary>
+    void Watch()
+    {
+        var p = Pointer.current;
+        if (p == null || eye == null) return;
+
+        if (p.press.wasPressedThisFrame && drag == Drag.None && !OverUi)
+        {
+            drag = Drag.Panning;
+            panFrom = p.position.ReadValue();
+            eye.Take();
+        }
+        else if (drag == Drag.Panning && p.press.isPressed)
+        {
+            var now = p.position.ReadValue();
+            eye.pan -= (now - panFrom) * Mpp;    // the lawn follows the hand
+            panFrom = now;
+        }
+        else if (drag == Drag.Panning && !p.press.isPressed &&
+                 (Mouse.current == null || !Mouse.current.rightButton.isPressed))
         {
             drag = Drag.None;
         }
@@ -356,7 +398,7 @@ public class AimControl : MonoBehaviour
 
         yield return Swing();
 
-        if (eye != null) eye.pan = Vector2.zero;
+        if (eye != null) eye.Release();
         if (!game.Strike(shot, power)) Hide();
     }
 

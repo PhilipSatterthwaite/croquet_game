@@ -863,6 +863,15 @@ In the game, `PauseMenu` offers exactly two things: Resume, and end the game
 and go back to the menu. Escape opens and closes it. It sets the turn aside —
 the machine's search stops — rather than freezing time.
 
+**The view can be taken during a shot.** While a shot plays the game points
+the camera at the moving ball every frame, and a look around used to be only an
+offset from that, so the view kept chasing the ball wherever you dragged it.
+Panning or zooming while it is not your turn to aim now calls
+`CourtCamera.Take`, after which the game's own requests to look somewhere are
+ignored until the next stroke hands the view back with `Release`. A plain
+left-drag on the lawn looks around too at those times, since nothing else can be
+meant by it, and it is the only way to look around on a phone.
+
 **Physics is not in either menu.** How the lawn plays is what the game IS: the
 same everywhere, the same for everybody, and no more a per-match choice than
 the bounce of a tennis ball. Friction and the length of a full stroke live on
@@ -928,11 +937,12 @@ What is left is what the lawn genuinely cannot show:
   rounded square in its colour inside a thin white border, and beside it a light
   grey bar — both so the black ball does not vanish into something dark. When that ball becomes dead on another, the
   other ball pops into the bar in its own colour, and an empty bar is a ball
-  dead on nobody. Top centre, one line below the Menu button: six pairs side
-  by side come to about 680 units, wider than the free stretch of the top edge
-  between the power bar and the Menu button on a 16:9 screen and wider still on
-  a 4:3 tablet, so on the top line itself the strip would run under one or the
-  other.
+  dead on nobody. In line with the power bar, starting just to its right, so the
+  top edge reads as one strip of instruments. Six pairs side by side come to about
+  680 canvas units and the room between the power bar and the Menu button on a
+  16:9 screen is about 625, so `GameHud.FitDeadness` scales the strip down to fit
+  that room rather than letting it run under the button; on a wider phone it
+  stays full size.
 
   **True colours only, and nothing drawn for a ball it is not dead on.** It was a
   chip for every other ball, dark until deadness lit it, and before that a faint
@@ -995,6 +1005,18 @@ what makes it read as a sphere rather than a circle.
 Sprites are baked at `Shapes.Res` (512). They are stretched to whatever the
 zoom asks for and the aiming ring is drawn three metres wide, so at 128 the
 whole game looked soft — it was being magnified rather than minified.
+
+**Every sprite is a full rectangle, never Unity's default tight mesh.**
+`Sprite.Create` without a mesh type cuts a sprite to a polygon around its opaque
+pixels, and a ball, a peg and a hoop post each came out a 76-vertex outline. The
+edge on screen was then that polygon — a hard geometric edge only multisampling
+could smooth — trimming off the soft rim the texture carries. Rendered at 7 and
+12 pixels and blown up, the polygon version is visibly faceted with a harder
+edge; `SpriteMeshType.FullRect` is four corners and lets the texture's alpha be
+the edge. Textures filter trilinearly too, so the edge does not step as the zoom
+changes. A ball seven pixels across is still only a few pixels of circle: this
+removes the faceting, not the resolution, and a bigger `minBallPixels` or
+`minFurniturePixels` is the lever for that.
 
 **A line needs a line sprite, not a white pixel.** `Shapes.Solid` stretched
 into a thin rotated quad has hard edges with nothing anti-aliasing them, and a
