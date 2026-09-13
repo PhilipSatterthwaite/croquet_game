@@ -806,7 +806,7 @@ public class CroquetGame : MonoBehaviour
     /// place against the hoop at every zoom and made them read as interface
     /// floating over the court rather than as part of it.
     /// </summary>
-    const float MarkSize = 0.07f, MarkSpacing = 0.09f;
+    const float MarkSize = 0.10f, MarkSpacing = 0.13f;
 
     /// <summary>
     /// The target ring's size on the lawn, before any floor for seeing it when

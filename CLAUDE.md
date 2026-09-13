@@ -1166,7 +1166,7 @@ the marks over the other hoops rather than a chevron a quarter the ring's width:
 the ring has already said "this one", and this only has to say "this way".
 
 **The direction marks are objects on the lawn, not interface.** They are sized
-(7 cm) and placed in METRES, so they grow and shrink with the zoom exactly as the
+(10 cm) and placed in METRES, so they grow and shrink with the zoom exactly as the
 hoops do and never slide about against them. Sized in screen pixels they stayed
 the same size on screen at every zoom, which put them in a different place
 relative to the hoop each time and read as something floating over the court.
