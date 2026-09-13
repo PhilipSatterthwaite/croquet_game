@@ -923,8 +923,9 @@ What is left is what the lawn genuinely cannot show:
   thing the game was telling you.
 - **Deadness**, top centre, in colours rather than words. This is the one thing
   in croquet with no physical sign at all: two balls a foot apart look identical
-  whether hitting one is worth two strokes or nothing. A row a ball: a square in
-  its colour, and beside it a bar. When that ball becomes dead on another, the
+  whether hitting one is worth two strokes or nothing. A row a ball: a slightly
+  rounded square in its colour inside a thin white border, and beside it a light
+  grey bar — both so the black ball does not vanish into something dark. When that ball becomes dead on another, the
   other ball pops into the bar in its own colour, and an empty bar is a ball
   dead on nobody. Top centre because the power bar has the left of the top edge
   and the Menu button the right.
@@ -932,10 +933,11 @@ What is left is what the lawn genuinely cannot show:
   **True colours only, and nothing drawn for a ball it is not dead on.** It was a
   chip for every other ball, dark until deadness lit it, and before that a faint
   version of its colour, with every square but the striker's dimmed; all of
-  those were colours that had to be told apart from the real thing. Each other
-  ball still keeps its own slot in every bar — hidden with `Image.enabled`, so
-  the layout keeps the space — so a ball's chip always appears in the same place
-  and nothing shuffles along when another arrives. It arrives with a brief swell
+  those were colours that had to be told apart from the real thing. The chips
+  pack from the left of the bar in BALL order, not the order the deadness came
+  in: dead on one ball, it sits at the left end; dead on three, they read in
+  playing order. A fixed slot per ball came first, and left a lone chip stranded
+  partway along an empty bar. It arrives with a brief swell
   (`localScale`), since a deadness picked up while you were watching the ball is
   otherwise silent.
 
@@ -1161,7 +1163,16 @@ most hoops both ways at different stages, so a ring alone leaves unsaid the half
 that decides where to stand. The triangle sits inside the ring on the NEAR side,
 pointing in through the hoop, so it reads as "come from here". It is the size of
 the marks over the other hoops rather than a chevron a quarter the ring's width:
-the ring has already said "this one", and this only has to say "this way". It was on the far
+the ring has already said "this one", and this only has to say "this way".
+
+**The direction marks are objects on the lawn, not interface.** They are sized
+(7 cm) and placed in METRES, so they grow and shrink with the zoom exactly as the
+hoops do and never slide about against them. Sized in screen pixels they stayed
+the same size on screen at every zoom, which put them in a different place
+relative to the hoop each time and read as something floating over the court.
+Their place is measured from the ring's true metre and the wire's exaggerated
+size without its pixel floor, since both floors only ever apply with the whole
+court in view and following them would move the marks with the zoom. It was on the far
 side first, to keep clear of a ball sitting in front of the hoop, and read as
 pointing past the hoop rather than through it. It draws under the balls, so a
 ball parked there covers it rather than wearing it.
@@ -1177,8 +1188,8 @@ rightward, below for leftward, halfway between the drawn wire and where the
 target ring's edge is, whether or not the ring is round that hoop. It used to
 float higher over the striker's own target to clear the ring, and a mark whose
 place depended on whose target the hoop was had no fixed place to be looked
-for. `CroquetGame.BarReach` takes the wire's drawn size from `CourtView`, which
-exaggerates it, so "between the wire and the ring" means what is on screen.
+for. `CroquetGame.BarReach` takes the wire's exaggerated size from `CourtView`, so
+"between the wire and the ring" means what is on screen at any playing zoom.
 Balls on the same side of the same hoop sit side by side; a peg has no way
 through, so a mark for one sits above it pointing down. `Shapes.Triangle` is centred on its centroid, so it turns about
 its middle and the larger copy behind it makes an even border. Where the others are going decides most of where to leave your own

@@ -799,16 +799,32 @@ public class CroquetGame : MonoBehaviour
     float RingDiameter => Mathf.Max(1.0f, Eye == null ? 0f : 26f * Eye.MetresPerPixel);
 
     /// <summary>
+    /// The direction marks are OBJECTS ON THE LAWN, sized and placed in metres,
+    /// so they get bigger and smaller with the zoom exactly as the hoops do and
+    /// never slide about relative to them. Sized in screen pixels they stayed
+    /// the same size on screen whatever the zoom, which put them in a different
+    /// place against the hoop at every zoom and made them read as interface
+    /// floating over the court rather than as part of it.
+    /// </summary>
+    const float MarkSize = 0.07f, MarkSpacing = 0.09f;
+
+    /// <summary>
+    /// The target ring's size on the lawn, before any floor for seeing it when
+    /// the whole court is in view -- what the marks are placed against, so
+    /// their place does not change as that floor comes and goes.
+    /// </summary>
+    const float RingMetres = 1.0f;
+
+    /// <summary>
     /// How far from a hoop's centre, across the line it is run along, its
-    /// drawn wire reaches -- the post's true offset plus half its drawn size,
-    /// which CourtView exaggerates and gives a pixel floor.
+    /// wire reaches on the lawn -- the post's true offset plus half the size
+    /// CourtView exaggerates it to. Its pixel floor is left out on purpose:
+    /// that only ever applies with the whole court in view, and following it
+    /// would move the marks with the zoom.
     /// </summary>
     float BarReach(Hoop h)
     {
-        float px = Eye == null ? 0.01f : Eye.MetresPerPixel;
-        float drawn = court == null
-            ? (float)(h.WireRadius * 2)
-            : Mathf.Max((float)(h.WireRadius * 2) * court.hoopScale, court.minFurniturePixels * px);
+        float drawn = (float)(h.WireRadius * 2) * (court == null ? 1f : court.hoopScale);
         return (float)(h.HalfGap + h.WireRadius) + drawn * 0.5f;
     }
 
@@ -873,10 +889,12 @@ public class CroquetGame : MonoBehaviour
 
         // A small filled triangle, the size of the marks over the other hoops,
         // rather than a chevron a quarter the width of the ring: it is saying
-        // "this way", and the ring has already said "this one".
-        float size = 11f * (Eye == null ? 0.01f : Eye.MetresPerPixel);
+        // "this way", and the ring has already said "this one". Placed and
+        // sized in metres, so it holds its place against the hoop at any zoom
+        // and does not breathe with the ring.
+        float size = MarkSize;
         arrow.transform.localPosition =
-            new Vector3(at.x - dir * d * 0.3f, at.y, arrow.transform.localPosition.z);
+            new Vector3(at.x - dir * RingMetres * 0.3f, at.y, arrow.transform.localPosition.z);
         arrow.transform.localRotation = Quaternion.Euler(0, 0, dir > 0 ? 0f : 180f);
         arrow.transform.localScale = new Vector3(size, size, 1);
 
@@ -919,10 +937,9 @@ public class CroquetGame : MonoBehaviour
             boundRim[b].gameObject.SetActive(boundShown[b]);
         }
 
-        float px = Eye == null ? 0.01f : Eye.MetresPerPixel;
-        float size = 11f * px;
-        float spacing = 14f * px;
-        float ring = RingDiameter * 0.5f;
+        float size = MarkSize;
+        float spacing = MarkSpacing;
+        float ring = RingMetres * 0.5f;
 
         for (int b = 0; b < n; b++)
         {
@@ -945,8 +962,7 @@ public class CroquetGame : MonoBehaviour
             }
 
             float reach = field.IsPeg(point)
-                ? Mathf.Max((float)(field.PegRadius * 2) * (court == null ? 1f : court.pegScale),
-                            (court == null ? 6f : court.minFurniturePixels) * px) * 0.5f
+                ? (float)(field.PegRadius * 2) * (court == null ? 1f : court.pegScale) * 0.5f
                 : BarReach(field.Hoops[field.HoopFor(point)]);
 
             var at = ToVector(field.TargetFor(point));

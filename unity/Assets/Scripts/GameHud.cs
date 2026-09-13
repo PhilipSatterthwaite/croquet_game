@@ -226,9 +226,10 @@ public class GameHud : MonoBehaviour
     /// it is NOT dead on -- no dark chip, no faint one -- so the bar only ever
     /// shows the one thing it is for.
     ///
-    /// Each other ball still keeps its own slot in every bar, so a ball's chip
-    /// always appears in the same place and nothing shuffles along when another
-    /// arrives.
+    /// The chips pack from the left of the bar in BALL order, not the order the
+    /// deadness came in: dead on one ball, it sits at the left end; dead on
+    /// three, they read in playing order. A fixed slot per ball left a lone chip
+    /// stranded partway along an empty bar.
     ///
     /// Top centre, because the power bar has the left of the top edge and the
     /// Menu button the right.
@@ -250,16 +251,28 @@ public class GameHud : MonoBehaviour
         {
             var row = Ui.Row(deadPanel, "Dead " + i, RowGap, Square, expand: false);
 
-            // The ball's own colour, as a plain square.
-            var owner = Ui.Block(row, "Owner", Color.white);
-            Size(owner.gameObject, Square, Square);
+            // The ball's own colour in a slightly rounded square, inside a thin
+            // white border -- which is what keeps the black ball's square from
+            // disappearing into anything dark around it.
+            var frame = Ui.Rect(row, "Owner");
+            Size(frame.gameObject, Square, Square);
+            Ui.Soften(Ui.Skin(frame, Color.white, round: false), 0.14f);
+
+            var owner = Ui.Block(frame, "Colour", Color.white);
+            var inset = (RectTransform)owner.transform;
+            inset.anchorMin = Vector2.zero;
+            inset.anchorMax = Vector2.one;
+            inset.offsetMin = new Vector2(Border, Border);
+            inset.offsetMax = new Vector2(-Border, -Border);
+            Ui.Soften(owner, 0.1f);
             deadOwner.Add(owner);
 
-            // The bar the balls it is dead on arrive in, painted on its own
-            // object so the backdrop stays out of the layout inside it.
+            // The bar the balls it is dead on arrive in. Light grey, because a
+            // dark bar swallowed the black ball's chip. Painted on its own object
+            // so the backdrop stays out of the layout inside it.
             var bar = Ui.Rect(row, "Bar");
             Size(bar.gameObject, BarWidth, Square);
-            Ui.Soften(Ui.Skin(bar, Ui.Panel, round: false), 0.2f);
+            Ui.Soften(Ui.Skin(bar, BarGrey, round: false), 0.2f);
 
             var slots = bar.gameObject.AddComponent<HorizontalLayoutGroup>();
             slots.spacing = ChipGap;
@@ -279,7 +292,10 @@ public class GameHud : MonoBehaviour
         }
     }
 
-    const float Square = 18f, RowGap = 6f, Chip = 12f, ChipGap = 3f, BarPad = 3f;
+    const float Square = 18f, RowGap = 6f, Chip = 12f, ChipGap = 3f, BarPad = 3f, Border = 2f;
+
+    /// <summary>The bar behind the chips: light enough that a black ball shows on it.</summary>
+    static readonly Color BarGrey = new Color(0.84f, 0.84f, 0.82f, 0.92f);
 
     /// <summary>A bar exactly wide enough for a slot for every other ball.</summary>
     static float BarWidth => BarPad * 2 + Others * Chip + (Others - 1) * ChipGap;
@@ -492,17 +508,14 @@ public class GameHud : MonoBehaviour
             {
                 int j = Other(i, k);
 
-                // A ball that is not in this game has no slot at all.
-                deadChips[i][k].gameObject.SetActive(j < count);
-                if (j >= count) continue;
-
-                bool dead = g.States[i].Dead.Contains(j);
+                bool dead = j < count && g.States[i].Dead.Contains(j);
                 if (dead && !wasDead[i][k]) litAt[i][k] = Time.time;
                 wasDead[i][k] = dead;
 
-                // Hidden, not removed: the image goes but its layout slot stays,
-                // so the chips beside it do not shuffle when it comes and goes.
-                deadChips[i][k].enabled = dead;
+                // Only the balls it is dead on are in the bar at all, so they
+                // pack from the left. The chips were made in ball order, so they
+                // build up in ball order whatever order the deadness came in.
+                deadChips[i][k].gameObject.SetActive(dead);
                 if (!dead) continue;
 
                 deadChips[i][k].color = game.ColourOf(j);
