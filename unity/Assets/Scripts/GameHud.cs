@@ -43,7 +43,6 @@ public class GameHud : MonoBehaviour
     readonly List<BonusWay> wayKinds = new List<BonusWay>();
 
     RectTransform deadPanel;
-    Text deadHeading;
     readonly List<RectTransform> deadRows = new List<RectTransform>();
     readonly List<Image> deadOwner = new List<Image>();
     readonly List<Image[]> deadChips = new List<Image[]>();
@@ -219,53 +218,79 @@ public class GameHud : MonoBehaviour
     }
 
     /// <summary>
-    /// Who is dead on whom, bottom right, said in colours.
+    /// Who is dead on whom, top centre, said in colours.
     ///
-    /// One row a ball, and in it a chip for each of the OTHER five. A ball
-    /// cannot roquet itself, so its own column was a permanently dark chip in
-    /// every row -- a diagonal of nothing, six slots wide, saying only that the
-    /// chart knew which row it was on.
+    /// One row a ball: a square in its colour, and beside it a bar. When that
+    /// ball becomes dead on another, the other ball pops into the bar in its own
+    /// colour; an empty bar is a ball dead on nobody. Nothing is drawn for a ball
+    /// it is NOT dead on -- no dark chip, no faint one -- so the bar only ever
+    /// shows the one thing it is for.
     ///
-    /// The striker's row is lit so the corner doubles as whose turn it is,
-    /// which is the other thing the lawn only half says.
+    /// Each other ball still keeps its own slot in every bar, so a ball's chip
+    /// always appears in the same place and nothing shuffles along when another
+    /// arrives.
+    ///
+    /// Top centre, because the power bar has the left of the top edge and the
+    /// Menu button the right.
     /// </summary>
     void BuildDeadness()
     {
         deadPanel = Ui.Rect(canvas.transform, "Deadness");
-        deadPanel.anchorMin = deadPanel.anchorMax = new Vector2(1, 0);
-        deadPanel.pivot = new Vector2(1, 0);
-        deadPanel.anchoredPosition = new Vector2(-18, 18);
-        deadPanel.sizeDelta = new Vector2(150, 0);
+        deadPanel.anchorMin = deadPanel.anchorMax = new Vector2(0.5f, 1);
+        deadPanel.pivot = new Vector2(0.5f, 1);
+        deadPanel.anchoredPosition = new Vector2(0, -18);
+        deadPanel.sizeDelta = new Vector2(Square + RowGap + BarWidth, 0);
 
-        Ui.Skin(deadPanel, Ui.Panel);
-        Ui.ColumnOn(deadPanel, 4, new RectOffset(12, 12, 10, 12));
+        Ui.ColumnOn(deadPanel, 4);
 
         var fit = deadPanel.gameObject.AddComponent<ContentSizeFitter>();
         fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-        deadHeading = Ui.Label(deadPanel, "DEADNESS", 11, Ui.Muted);
-        Ui.Tall(deadHeading.gameObject, 15);
-
         for (int i = 0; i < MaxBalls; i++)
         {
-            var row = Ui.Row(deadPanel, "Dead " + i, 5, 22, expand: false);
+            var row = Ui.Row(deadPanel, "Dead " + i, RowGap, Square, expand: false);
 
-            // The ball itself, then one small ball for every ball in the game.
-            // Same sprite as the balls on the lawn, so the chart is made of the
-            // same things the court is and needs no key.
-            deadOwner.Add(Ui.Dot(row, "Owner", Color.white, 20));
+            // The ball's own colour, as a plain square.
+            var owner = Ui.Block(row, "Owner", Color.white);
+            Size(owner.gameObject, Square, Square);
+            deadOwner.Add(owner);
+
+            // The bar the balls it is dead on arrive in, painted on its own
+            // object so the backdrop stays out of the layout inside it.
+            var bar = Ui.Rect(row, "Bar");
+            Size(bar.gameObject, BarWidth, Square);
+            Ui.Soften(Ui.Skin(bar, Ui.Panel, round: false), 0.2f);
+
+            var slots = bar.gameObject.AddComponent<HorizontalLayoutGroup>();
+            slots.spacing = ChipGap;
+            slots.padding = new RectOffset((int)BarPad, (int)BarPad, 0, 0);
+            slots.childAlignment = TextAnchor.MiddleLeft;
+            slots.childControlWidth = slots.childControlHeight = true;
+            slots.childForceExpandWidth = slots.childForceExpandHeight = false;
 
             var chips = new Image[Others];
             for (int k = 0; k < Others; k++)
-                chips[k] = Ui.Dot(row, "On " + k, Color.white, 13);
-
-            Ui.Filler(row);
+                chips[k] = Ui.Dot(bar, "On " + k, Color.white, Chip);
 
             deadChips.Add(chips);
             deadRows.Add(row);
             wasDead.Add(new bool[Others]);
             litAt.Add(new float[Others]);
         }
+    }
+
+    const float Square = 18f, RowGap = 6f, Chip = 12f, ChipGap = 3f, BarPad = 3f;
+
+    /// <summary>A bar exactly wide enough for a slot for every other ball.</summary>
+    static float BarWidth => BarPad * 2 + Others * Chip + (Others - 1) * ChipGap;
+
+    /// <summary>Fixes a piece of the layout at one size, neither growing nor shrinking.</summary>
+    static void Size(GameObject go, float w, float h)
+    {
+        var le = go.GetComponent<LayoutElement>() ?? go.AddComponent<LayoutElement>();
+        le.minWidth = le.preferredWidth = w;
+        le.minHeight = le.preferredHeight = h;
+        le.flexibleWidth = le.flexibleHeight = 0;
     }
 
     /// <summary>Which ball slot <paramref name="k"/> of row <paramref name="i"/> stands for.</summary>
@@ -440,18 +465,15 @@ public class GameHud : MonoBehaviour
     }
 
     /// <summary>
-    /// A little chart, always up: a row for every ball, and in each row a small
-    /// ball for every ball in the game.
+    /// Brings a ball into a bar the moment the row's ball becomes dead on it,
+    /// with a small swell so a deadness picked up while watching the ball is not
+    /// silent.
     ///
-    /// Every slot keeps the same place whatever happens, so the chart has a
-    /// SHAPE that can be learned -- which a list that packs up and moves about
-    /// does not.
-    ///
-    /// A live chip is DARK, not a faint version of its colour. Dimming the
-    /// colour left six muted discs against six bright ones, and the chart had
-    /// to be read rather than glanced at; against near-black, colour means
-    /// exactly one thing, and it arrives with a small swell so a deadness
-    /// picked up while you were watching the ball is not silent.
+    /// True colours only. The square is its ball's colour, a chip is the colour
+    /// of the ball it stands for, and there is no dimming anywhere -- it used to
+    /// dim every square but the striker's, and dark or faint stand-ins for live
+    /// balls, and all of those were colours that had to be told apart from the
+    /// real thing.
     /// </summary>
     void Deadness()
     {
@@ -464,17 +486,13 @@ public class GameHud : MonoBehaviour
             deadRows[i].gameObject.SetActive(playing);
             if (!playing) continue;
 
-            bool striking = i == game.ShownStriker;
-            var own = game.ColourOf(i);
-
-            // The striker's own ball is full strength; everyone else's is
-            // dimmed, so whose turn it is falls out of the same chart.
-            deadOwner[i].color = striking ? own : own * 0.55f;
+            deadOwner[i].color = game.ColourOf(i);
 
             for (int k = 0; k < Others; k++)
             {
                 int j = Other(i, k);
 
+                // A ball that is not in this game has no slot at all.
                 deadChips[i][k].gameObject.SetActive(j < count);
                 if (j >= count) continue;
 
@@ -482,15 +500,16 @@ public class GameHud : MonoBehaviour
                 if (dead && !wasDead[i][k]) litAt[i][k] = Time.time;
                 wasDead[i][k] = dead;
 
-                var c = game.ColourOf(j);
-                deadChips[i][k].color = dead
-                    ? c
-                    : new Color(c.r * 0.17f, c.g * 0.17f, c.b * 0.17f, 1f);
+                // Hidden, not removed: the image goes but its layout slot stays,
+                // so the chips beside it do not shuffle when it comes and goes.
+                deadChips[i][k].enabled = dead;
+                if (!dead) continue;
 
-                // Scale, not layout: the chip swells in place and its
-                // neighbours do not shuffle along to make room.
+                deadChips[i][k].color = game.ColourOf(j);
+
+                // Scale, not layout: the chip swells in place.
                 float since = Time.time - litAt[i][k];
-                float swell = dead && since < Pop ? 1f + 0.55f * (1f - since / Pop) : 1f;
+                float swell = since < Pop ? 1f + 0.55f * (1f - since / Pop) : 1f;
                 deadChips[i][k].rectTransform.localScale = Vector3.one * swell;
             }
         }

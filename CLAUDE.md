@@ -921,20 +921,23 @@ What is left is what the lawn genuinely cannot show:
   left to be dead on. As a card floating on the live lawn with the power bar
   and the deadness chart still up around it, the end of a game read as one more
   thing the game was telling you.
-- **Deadness**, bottom right, as a little chart in colours rather than words.
-  This is the one thing in croquet with no physical sign at all: two balls a
-  foot apart look identical whether hitting one is worth two strokes or
-  nothing. A row a ball, and in it a chip for each of the **other five** — a
-  ball cannot roquet itself, and its own column was a permanently dark diagonal
-  saying only that the chart knew which row it was on. Every slot keeps its
-  place, so the chart has a shape that can be learned; a list that packs up and
-  moves about has none.
+- **Deadness**, top centre, in colours rather than words. This is the one thing
+  in croquet with no physical sign at all: two balls a foot apart look identical
+  whether hitting one is worth two strokes or nothing. A row a ball: a square in
+  its colour, and beside it a bar. When that ball becomes dead on another, the
+  other ball pops into the bar in its own colour, and an empty bar is a ball
+  dead on nobody. Top centre because the power bar has the left of the top edge
+  and the Menu button the right.
 
-  A live chip is **dark**, not a faint version of its colour. Dimmed colour
-  gave six muted discs against six bright ones and had to be read rather than
-  glanced at; against near-black, colour means exactly one thing. It arrives
-  with a brief swell — `localScale`, so neighbours do not shuffle along — since
-  a deadness picked up while you were watching the ball is otherwise silent.
+  **True colours only, and nothing drawn for a ball it is not dead on.** It was a
+  chip for every other ball, dark until deadness lit it, and before that a faint
+  version of its colour, with every square but the striker's dimmed; all of
+  those were colours that had to be told apart from the real thing. Each other
+  ball still keeps its own slot in every bar — hidden with `Image.enabled`, so
+  the layout keeps the space — so a ball's chip always appears in the same place
+  and nothing shuffles along when another arrives. It arrives with a brief swell
+  (`localScale`), since a deadness picked up while you were watching the ball is
+  otherwise silent.
 
 Buttons are rounded rectangles, not pills, and rows do not force-expand their
 children. `Ui.Row(expand: false)` with a `Ui.Filler` is how a single digit
