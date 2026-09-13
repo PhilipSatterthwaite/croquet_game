@@ -180,7 +180,7 @@ public class CroquetGame : MonoBehaviour
     readonly List<SpriteRenderer> seats = new List<SpriteRenderer>();
     SpriteRenderer marker, target, arrow;
 
-    /// <summary>A dot over the hoop each ball is playing for, and a dark rim behind it.</summary>
+    /// <summary>An arrow over the hoop each ball is playing for, and a dark rim behind it.</summary>
     readonly List<SpriteRenderer> bound = new List<SpriteRenderer>();
     readonly List<SpriteRenderer> boundRim = new List<SpriteRenderer>();
     bool[] boundShown = new bool[0];
@@ -757,11 +757,11 @@ public class CroquetGame : MonoBehaviour
             glints.Add(Shapes.Piece(root, "Ball " + i + " glint", Shapes.Gloss,
                                     new Color(1, 1, 1, 0.5f), Layer.Gloss));
 
-            // The dark rim is what keeps a white or yellow dot readable on
+            // The dark rim is what keeps a white or yellow arrow readable on
             // pale grass.
-            boundRim.Add(Shapes.Piece(root, "Ball " + i + " bound rim", Shapes.Disc,
+            boundRim.Add(Shapes.Piece(root, "Ball " + i + " bound rim", Shapes.Triangle,
                                       new Color(0, 0, 0, 0.6f), Layer.BoundRim));
-            bound.Add(Shapes.Piece(root, "Ball " + i + " bound", Shapes.Disc,
+            bound.Add(Shapes.Piece(root, "Ball " + i + " bound", Shapes.Triangle,
                                    ColourOf(i), Layer.Bound));
         }
 
@@ -826,15 +826,18 @@ public class CroquetGame : MonoBehaviour
         // Which way through. The course runs most hoops both ways at different
         // stages, so a ring says which hoop and nothing about the direction --
         // and the direction is the half that decides where to stand. On the
-        // FAR side, pointing out of the hoop: the near side is where the
-        // striker is usually sitting, and a ball there would cover it.
+        // NEAR side, pointing in through the hoop, so it reads as "come from
+        // here". It was on the far side first, to keep clear of a ball sitting
+        // in front of the hoop, and read as pointing past the hoop rather than
+        // through it. It stays under the balls, so a ball parked there covers
+        // it rather than wearing it.
         int dir = field.IsPeg(point) ? 0 : field.DirectionFor(point);
         arrow.gameObject.SetActive(dir != 0);
         if (dir == 0) return;
 
         float size = d * 0.24f;
         arrow.transform.localPosition =
-            new Vector3(at.x + dir * d * 0.3f, at.y, arrow.transform.localPosition.z);
+            new Vector3(at.x - dir * d * 0.3f, at.y, arrow.transform.localPosition.z);
         arrow.transform.localRotation = Quaternion.Euler(0, 0, dir > 0 ? 0f : 180f);
         arrow.transform.localScale = new Vector3(size, size, 1);
 
@@ -844,8 +847,9 @@ public class CroquetGame : MonoBehaviour
     }
 
     /// <summary>
-    /// A small dot in every OTHER ball's colour over the hoop that ball is
-    /// playing for.
+    /// A small triangular arrow in every OTHER ball's colour over the hoop that
+    /// ball is playing for, pointing the way it has to run it -- or straight
+    /// down at a peg, which has no way through.
     ///
     /// Where everyone else is going decides most of where to leave your own
     /// ball -- in front of their hoop is in their way, near it is handing them
@@ -872,8 +876,8 @@ public class CroquetGame : MonoBehaviour
         }
 
         float px = Eye == null ? 0.01f : Eye.MetresPerPixel;
-        float dot = 9f * px;
-        float spacing = 12f * px;
+        float size = 11f * px;
+        float spacing = 14f * px;
 
         int mine = field.IsFinished(ShownPoint) ? int.MinValue : Where(ShownPoint);
         float ring = Mathf.Max(1.0f, 26f * px) * 0.5f;     // the striker's target ring
@@ -897,8 +901,16 @@ public class CroquetGame : MonoBehaviour
             float lift = (key == mine ? ring : 0f) + 14f * px;
             var p = at + new Vector2((slot - (count - 1) * 0.5f) * spacing, lift);
 
-            boundRim[b].Put(p.x, p.y, dot * 1.5f, dot * 1.5f);
-            bound[b].Put(p.x, p.y, dot, dot);
+            // Its own direction, not the group's: two balls can want the same
+            // hoop from opposite ends -- hoop 2 and 1-back -- and sit side by
+            // side pointing away from each other.
+            var turn = Quaternion.Euler(0, 0, field.IsPeg(point) ? -90f
+                                             : field.DirectionFor(point) > 0 ? 0f : 180f);
+            bound[b].transform.localRotation = turn;
+            boundRim[b].transform.localRotation = turn;
+
+            boundRim[b].Put(p.x, p.y, size * 1.55f, size * 1.55f);
+            bound[b].Put(p.x, p.y, size, size);
         }
 
         // Hoops by index and pegs below zero, so the two points that are the

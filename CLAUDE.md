@@ -1155,13 +1155,19 @@ stroke report is held back the same way, for the same reason.
 
 **The ring says which hoop; a chevron says which way.** The course runs most
 hoops both ways at different stages, so a ring alone leaves unsaid the half that
-decides where to stand. The chevron sits inside the ring on the FAR side,
-pointing out through the hoop: the near side is where the striker is usually
-standing, and a ball there would cover it.
+decides where to stand. The chevron sits inside the ring on the NEAR side,
+pointing in through the hoop, so it reads as "come from here". It was on the far
+side first, to keep clear of a ball sitting in front of the hoop, and read as
+pointing past the hoop rather than through it. It draws under the balls, so a
+ball parked there covers it rather than wearing it.
 
-**Every other ball's hoop is marked too**, with a small dot in that ball's colour
-floating over it on a dark rim — the rim is what keeps white and yellow readable
-on pale grass. Where the others are going decides most of where to leave your own
+**Every other ball's hoop is marked too**, with a small triangular arrow in that
+ball's colour floating over it on a dark rim, pointing the way that ball has to
+run it — or straight down at a peg, which has no way through. The rim is what
+keeps white and yellow readable on pale grass. Each arrow takes its own ball's
+direction rather than its group's, because two balls can want the same hoop from
+opposite ends. `Shapes.Triangle` is centred on its centroid, so it turns about
+its middle and the larger copy behind it makes an even border. Where the others are going decides most of where to leave your own
 ball, and nine hoops that look alike give no clue. Balls bound for the same hoop
 sit side by side, grouped by hoop rather than by course point so that hoop 2 and
 1-back share one spot, and over the striker's own target they sit clear of its

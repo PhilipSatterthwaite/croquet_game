@@ -63,7 +63,7 @@ public static class Layer
 public static class Shapes
 {
     static Sprite solid, disc, ring, sphere, cylinder, wood, shadow, gloss, rounded;
-    static Sprite chevron, fade, line, dashes, gust, grass;
+    static Sprite chevron, fade, line, dashes, gust, grass, triangle;
     static Material flat;
 
     /// <summary>
@@ -767,6 +767,58 @@ public static class Shapes
         var ab = b - a;
         along = Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
         return Vector2.Distance(p, a + ab * along);
+    }
+
+    /// <summary>
+    /// A small filled triangle pointing along +x, one unit across.
+    ///
+    /// Centred on its CENTROID rather than on its bounding box, which is the
+    /// whole of the care it needs: turned, it swings about its own middle
+    /// instead of wandering, and a larger copy drawn behind it as a rim comes
+    /// out an even border all the way round instead of a fat one at the base.
+    /// </summary>
+    public static Sprite Triangle
+    {
+        get
+        {
+            if (!Spent(triangle)) return triangle;
+
+            const int size = 128;
+            var t = New(size, size);
+
+            // Height along x; the apex two thirds of it ahead of the centroid
+            // and the base one third behind, with equal sides.
+            const float height = 0.72f;
+            float halfBase = height / Mathf.Sqrt(3f);
+
+            var apex = new Vector2(0.5f + height * 2f / 3f, 0.5f);
+            var upper = new Vector2(0.5f - height / 3f, 0.5f + halfBase);
+            var lower = new Vector2(0.5f - height / 3f, 0.5f - halfBase);
+
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    var p = new Vector2((x + 0.5f) / size, (y + 0.5f) / size);
+
+                    // How far inside the nearest edge, so the rim is soft by
+                    // about a texel rather than stepped.
+                    float inside = Mathf.Min(Edge(p, apex, upper),
+                                   Mathf.Min(Edge(p, upper, lower), Edge(p, lower, apex)));
+                    t.SetPixel(x, y, new Color(1, 1, 1, Mathf.Clamp01(inside * size + 0.5f)));
+                }
+
+            t.Apply();
+            triangle = Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size), "Triangle");
+            return triangle;
+
+            // Signed distance from the line a->b, positive inside a triangle
+            // wound counter-clockwise -- which apex, upper, lower is.
+            static float Edge(Vector2 p, Vector2 a, Vector2 b)
+            {
+                var ab = b - a;
+                return Vector2.Dot(p - a, new Vector2(-ab.y, ab.x).normalized);
+            }
+        }
     }
 
     /// <summary>
