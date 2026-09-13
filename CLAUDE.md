@@ -1153,20 +1153,28 @@ stroke report is held back the same way, for the same reason.
 
 `ReplayTests.A_replay_remembers_the_point_the_stroke_was_for` guards it.
 
-**The ring says which hoop; a chevron says which way.** The course runs most
-hoops both ways at different stages, so a ring alone leaves unsaid the half that
-decides where to stand. The chevron sits inside the ring on the NEAR side,
-pointing in through the hoop, so it reads as "come from here". It was on the far
+**The ring says which hoop; a small triangle says which way.** The course runs
+most hoops both ways at different stages, so a ring alone leaves unsaid the half
+that decides where to stand. The triangle sits inside the ring on the NEAR side,
+pointing in through the hoop, so it reads as "come from here". It is the size of
+the marks over the other hoops rather than a chevron a quarter the ring's width:
+the ring has already said "this one", and this only has to say "this way". It was on the far
 side first, to keep clear of a ball sitting in front of the hoop, and read as
 pointing past the hoop rather than through it. It draws under the balls, so a
 ball parked there covers it rather than wearing it.
 
-**Every other ball's hoop is marked too**, with a small triangular arrow in that
-ball's colour floating over it on a dark rim, pointing the way that ball has to
-run it — or straight down at a peg, which has no way through. The rim is what
-keeps white and yellow readable on pale grass. Each arrow takes its own ball's
-direction rather than its group's, because two balls can want the same hoop from
-opposite ends. `Shapes.Triangle` is centred on its centroid, so it turns about
+**Every other ball's hoop is marked too**, with a small triangular arrow in a
+FADED version of that ball's colour — pale and half see-through, so a mark about
+a ball never reads as a ball — pointing the way that ball has to run the hoop.
+It always sits in the same place: above the hoop for a ball running it
+rightward, below for leftward, halfway between the drawn wire and where the
+target ring's edge is, whether or not the ring is round that hoop. It used to
+float higher over the striker's own target to clear the ring, and a mark whose
+place depended on whose target the hoop was had no fixed place to be looked
+for. `CroquetGame.BarReach` takes the wire's drawn size from `CourtView`, which
+exaggerates it, so "between the wire and the ring" means what is on screen.
+Balls on the same side of the same hoop sit side by side; a peg has no way
+through, so a mark for one sits above it pointing down. `Shapes.Triangle` is centred on its centroid, so it turns about
 its middle and the larger copy behind it makes an even border. Where the others are going decides most of where to leave your own
 ball, and nine hoops that look alike give no clue. Balls bound for the same hoop
 sit side by side, grouped by hoop rather than by course point so that hoop 2 and

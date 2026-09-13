@@ -757,12 +757,13 @@ public class CroquetGame : MonoBehaviour
             glints.Add(Shapes.Piece(root, "Ball " + i + " glint", Shapes.Gloss,
                                     new Color(1, 1, 1, 0.5f), Layer.Gloss));
 
-            // The dark rim is what keeps a white or yellow arrow readable on
-            // pale grass.
+            // Faded, so a mark about a ball never reads as a ball: a pale,
+            // half-see-through version of its colour, on a light rim that is
+            // still enough to keep white and yellow readable on pale grass.
             boundRim.Add(Shapes.Piece(root, "Ball " + i + " bound rim", Shapes.Triangle,
-                                      new Color(0, 0, 0, 0.6f), Layer.BoundRim));
+                                      new Color(0, 0, 0, 0.3f), Layer.BoundRim));
             bound.Add(Shapes.Piece(root, "Ball " + i + " bound", Shapes.Triangle,
-                                   ColourOf(i), Layer.Bound));
+                                   Faded(ColourOf(i)), Layer.Bound));
         }
 
         if (marker == null)
@@ -773,7 +774,36 @@ public class CroquetGame : MonoBehaviour
             target = Shapes.Piece(root, "Target", Shapes.Dashes, targetPaint, Layer.Target);
 
         if (arrow == null)
-            arrow = Shapes.Piece(root, "Target direction", Shapes.Chevron, targetPaint, Layer.Target);
+            arrow = Shapes.Piece(root, "Target direction", Shapes.Triangle, targetPaint, Layer.Target);
+    }
+
+    /// <summary>A ball's colour washed toward pale grey and half see-through.</summary>
+    static Color Faded(Color c)
+    {
+        var f = Color.Lerp(c, new Color(0.86f, 0.86f, 0.82f), 0.35f);
+        f.a = 0.62f;
+        return f;
+    }
+
+    /// <summary>
+    /// The dashed ring's diameter before it breathes: a metre, or a size that
+    /// can be seen when the whole court is in view. One number so that the ring
+    /// and everything placed against it agree.
+    /// </summary>
+    float RingDiameter => Mathf.Max(1.0f, Eye == null ? 0f : 26f * Eye.MetresPerPixel);
+
+    /// <summary>
+    /// How far from a hoop's centre, across the line it is run along, its
+    /// drawn wire reaches -- the post's true offset plus half its drawn size,
+    /// which CourtView exaggerates and gives a pixel floor.
+    /// </summary>
+    float BarReach(Hoop h)
+    {
+        float px = Eye == null ? 0.01f : Eye.MetresPerPixel;
+        float drawn = court == null
+            ? (float)(h.WireRadius * 2)
+            : Mathf.Max((float)(h.WireRadius * 2) * court.hoopScale, court.minFurniturePixels * px);
+        return (float)(h.HalfGap + h.WireRadius) + drawn * 0.5f;
     }
 
     void LateUpdate()
@@ -813,7 +843,7 @@ public class CroquetGame : MonoBehaviour
         // of vision without it ever competing with the balls: movement is the
         // thing the eye catches, so the marker can give up brightness for it.
         float breathe = 1f + 0.05f * Mathf.Sin(Time.time * 2.2f);
-        float d = Mathf.Max(1.0f, (Eye == null ? 0 : 26f * Eye.MetresPerPixel)) * breathe;
+        float d = RingDiameter * breathe;
 
         target.Put(at.x, at.y, d, d);
         target.transform.localRotation =
@@ -835,7 +865,10 @@ public class CroquetGame : MonoBehaviour
         arrow.gameObject.SetActive(dir != 0);
         if (dir == 0) return;
 
-        float size = d * 0.24f;
+        // A small filled triangle, the size of the marks over the other hoops,
+        // rather than a chevron a quarter the width of the ring: it is saying
+        // "this way", and the ring has already said "this one".
+        float size = 11f * (Eye == null ? 0.01f : Eye.MetresPerPixel);
         arrow.transform.localPosition =
             new Vector3(at.x - dir * d * 0.3f, at.y, arrow.transform.localPosition.z);
         arrow.transform.localRotation = Quaternion.Euler(0, 0, dir > 0 ? 0f : 180f);
@@ -847,15 +880,20 @@ public class CroquetGame : MonoBehaviour
     }
 
     /// <summary>
-    /// A small triangular arrow in every OTHER ball's colour over the hoop that
-    /// ball is playing for, pointing the way it has to run it -- or straight
-    /// down at a peg, which has no way through.
+    /// A small triangular arrow in every OTHER ball's faded colour beside the
+    /// hoop that ball is playing for, pointing the way it has to run it.
     ///
     /// Where everyone else is going decides most of where to leave your own
     /// ball -- in front of their hoop is in their way, near it is handing them
-    /// a roquet -- and nine hoops that look alike give no clue. Balls headed for
-    /// the same hoop sit side by side rather than on top of each other, and
-    /// over the striker's own target they sit clear of its ring.
+    /// a roquet -- and nine hoops that look alike give no clue.
+    ///
+    /// Always the same place for a given hoop and direction: ABOVE the hoop for
+    /// a ball running it rightward, BELOW for leftward, halfway between the
+    /// drawn wire and where the target ring's edge is -- whether or not the ring
+    /// is actually round that hoop. A mark that moved depending on whose target
+    /// the hoop was had no fixed place to be looked for. Balls on the same side
+    /// of the same hoop sit side by side. A peg has no way through, so a mark
+    /// for one sits above it pointing down.
     /// </summary>
     void ShowBound()
     {
@@ -878,32 +916,37 @@ public class CroquetGame : MonoBehaviour
         float px = Eye == null ? 0.01f : Eye.MetresPerPixel;
         float size = 11f * px;
         float spacing = 14f * px;
-
-        int mine = field.IsFinished(ShownPoint) ? int.MinValue : Where(ShownPoint);
-        float ring = Mathf.Max(1.0f, 26f * px) * 0.5f;     // the striker's target ring
+        float ring = RingDiameter * 0.5f;
 
         for (int b = 0; b < n; b++)
         {
             if (!boundShown[b]) continue;
 
             int point = Game.States[b].Point;
-            int key = Where(point);
+            int key = Where(point), side = Side(point);
 
+            // Side by side with the others on the SAME side of the same hoop;
+            // a ball running it the other way is on the other side and does not
+            // push this one along.
             int slot = 0, count = 0;
             for (int o = 0; o < n; o++)
             {
-                if (!boundShown[o] || Where(Game.States[o].Point) != key) continue;
+                if (!boundShown[o]) continue;
+                int op = Game.States[o].Point;
+                if (Where(op) != key || Side(op) != side) continue;
                 if (o < b) slot++;
                 count++;
             }
 
-            var at = ToVector(field.TargetFor(point));
-            float lift = (key == mine ? ring : 0f) + 14f * px;
-            var p = at + new Vector2((slot - (count - 1) * 0.5f) * spacing, lift);
+            float reach = field.IsPeg(point)
+                ? Mathf.Max((float)(field.PegRadius * 2) * (court == null ? 1f : court.pegScale),
+                            (court == null ? 6f : court.minFurniturePixels) * px) * 0.5f
+                : BarReach(field.Hoops[field.HoopFor(point)]);
 
-            // Its own direction, not the group's: two balls can want the same
-            // hoop from opposite ends -- hoop 2 and 1-back -- and sit side by
-            // side pointing away from each other.
+            var at = ToVector(field.TargetFor(point));
+            float across = (reach + ring) * 0.5f;
+            var p = at + new Vector2((slot - (count - 1) * 0.5f) * spacing, side * across);
+
             var turn = Quaternion.Euler(0, 0, field.IsPeg(point) ? -90f
                                              : field.DirectionFor(point) > 0 ? 0f : 180f);
             bound[b].transform.localRotation = turn;
@@ -913,9 +956,11 @@ public class CroquetGame : MonoBehaviour
             bound[b].Put(p.x, p.y, size, size);
         }
 
-        // Hoops by index and pegs below zero, so the two points that are the
-        // same hoop run opposite ways -- hoop 2 and 1-back -- share one spot.
+        // Hoops by index and pegs below zero.
         int Where(int pt) => field.IsPeg(pt) ? -1 - field.PegIndexFor(pt) : field.HoopFor(pt);
+
+        // Above for rightward and for a peg, below for leftward.
+        int Side(int pt) => field.IsPeg(pt) || field.DirectionFor(pt) > 0 ? 1 : -1;
     }
 
     /// <summary>Draws the balls where the rules currently have them.</summary>
