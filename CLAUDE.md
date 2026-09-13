@@ -923,12 +923,16 @@ What is left is what the lawn genuinely cannot show:
   thing the game was telling you.
 - **Deadness**, top centre, in colours rather than words. This is the one thing
   in croquet with no physical sign at all: two balls a foot apart look identical
-  whether hitting one is worth two strokes or nothing. A row a ball: a slightly
+  whether hitting one is worth two strokes or nothing. One pair a ball, side by
+  side in a strip: a slightly
   rounded square in its colour inside a thin white border, and beside it a light
   grey bar — both so the black ball does not vanish into something dark. When that ball becomes dead on another, the
   other ball pops into the bar in its own colour, and an empty bar is a ball
-  dead on nobody. Top centre because the power bar has the left of the top edge
-  and the Menu button the right.
+  dead on nobody. Top centre, one line below the Menu button: six pairs side
+  by side come to about 680 units, wider than the free stretch of the top edge
+  between the power bar and the Menu button on a 16:9 screen and wider still on
+  a 4:3 tablet, so on the top line itself the strip would run under one or the
+  other.
 
   **True colours only, and nothing drawn for a ball it is not dead on.** It was a
   chip for every other ball, dark until deadness lit it, and before that a faint

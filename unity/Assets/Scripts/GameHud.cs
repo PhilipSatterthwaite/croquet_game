@@ -220,7 +220,8 @@ public class GameHud : MonoBehaviour
     /// <summary>
     /// Who is dead on whom, top centre, said in colours.
     ///
-    /// One row a ball: a square in its colour, and beside it a bar. When that
+    /// One pair a ball, side by side in a strip: a square in its colour, and
+    /// beside it a bar. When that
     /// ball becomes dead on another, the other ball pops into the bar in its own
     /// colour; an empty bar is a ball dead on nobody. Nothing is drawn for a ball
     /// it is NOT dead on -- no dark chip, no faint one -- so the bar only ever
@@ -231,20 +232,31 @@ public class GameHud : MonoBehaviour
     /// three, they read in playing order. A fixed slot per ball left a lone chip
     /// stranded partway along an empty bar.
     ///
-    /// Top centre, because the power bar has the left of the top edge and the
-    /// Menu button the right.
+    /// Top centre, dropped just below the Menu button. Six pairs side by side
+    /// come to about 680 units, and the free stretch of the top edge between
+    /// the power bar and the Menu button is under 300 either side of centre on
+    /// a 16:9 screen -- less on a 4:3 tablet -- so on the top line itself the
+    /// strip would run under one or the other. One line down, nothing is in its
+    /// way at any shape of screen.
     /// </summary>
     void BuildDeadness()
     {
         deadPanel = Ui.Rect(canvas.transform, "Deadness");
         deadPanel.anchorMin = deadPanel.anchorMax = new Vector2(0.5f, 1);
         deadPanel.pivot = new Vector2(0.5f, 1);
-        deadPanel.anchoredPosition = new Vector2(0, -18);
-        deadPanel.sizeDelta = new Vector2(Square + RowGap + BarWidth, 0);
+        deadPanel.anchoredPosition = new Vector2(0, -(18 + 36 + 8));   // below the Menu button
+        deadPanel.sizeDelta = new Vector2(0, Square);
 
-        Ui.ColumnOn(deadPanel, 4);
+        // The pairs laid side by side rather than stacked, and the strip sized
+        // to however many balls are playing.
+        var across = deadPanel.gameObject.AddComponent<HorizontalLayoutGroup>();
+        across.spacing = UnitGap;
+        across.childAlignment = TextAnchor.MiddleCenter;
+        across.childControlWidth = across.childControlHeight = true;
+        across.childForceExpandWidth = across.childForceExpandHeight = false;
 
         var fit = deadPanel.gameObject.AddComponent<ContentSizeFitter>();
+        fit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
         fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
         for (int i = 0; i < MaxBalls; i++)
@@ -292,7 +304,8 @@ public class GameHud : MonoBehaviour
         }
     }
 
-    const float Square = 18f, RowGap = 6f, Chip = 12f, ChipGap = 3f, BarPad = 3f, Border = 2f;
+    const float Square = 18f, RowGap = 6f, Chip = 12f, ChipGap = 3f, BarPad = 3f, Border = 2f,
+                UnitGap = 14f;
 
     /// <summary>The bar behind the chips: light enough that a black ball shows on it.</summary>
     static readonly Color BarGrey = new Color(0.84f, 0.84f, 0.82f, 0.92f);
