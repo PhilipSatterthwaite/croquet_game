@@ -720,7 +720,14 @@ public class AimControl : MonoBehaviour
         swinging = true;
 
         float from = pull;
-        var at = game.StrikerPoint();
+        var at = CroquetGame.ToVector(game.StrikerPoint());
+        var unit = new Vector2((float)aim.X, (float)aim.Y);
+        float angle = Mathf.Atan2(unit.y, unit.x) * Mathf.Rad2Deg;
+
+        // Only the head comes through. The aim line and the split lines stayed
+        // up during the swing, and read as a line the head was sliding along --
+        // the aim is settled by now, and the head is the only thing moving.
+        HideAim();
 
         for (float e = 0; e < SwingTime; e += Time.deltaTime)
         {
@@ -728,7 +735,7 @@ public class AimControl : MonoBehaviour
 
             // Fast into the ball rather than even: a stroke accelerates.
             pull = Mathf.Lerp(from, 0, t * t);
-            Draw(at, aim, true, pull);
+            DrawSwing(at, unit, angle, pull);
             yield return null;
         }
 

@@ -77,11 +77,31 @@ namespace Croquet.Core
         public readonly Vec2 Aim;
         public readonly double Power;
 
+        /// <summary>
+        /// Every ball's rules-side state from before the stroke: deadness, and
+        /// how far round the course. For the same reason as
+        /// <see cref="PointBefore"/> -- the Game has already moved on, and an
+        /// interface reading it live shows a roquet's deadness, or a wicket's
+        /// revival, as the mallet meets the ball.
+        /// </summary>
+        public readonly BallState[] Before;
+
+        /// <summary>
+        /// The frame on which the striker's deadness changes: the contact that
+        /// roquets a ball, or the crossing that clears its wicket and revives
+        /// it. The last frame when the stroke changed neither.
+        ///
+        /// Read off the real stroke's events, whose substep stamps map onto
+        /// these frames exactly, because the frames are stepped the same way.
+        /// </summary>
+        public readonly int DeadnessFrame;
+
         public int FrameCount => Frames.Count;
         public double Seconds => (Frames.Count - 1) / (double)FramesPerSecond;
 
         Replay(StrokeResult result, IReadOnlyList<Vec2[]> frames, int striker, int pointBefore,
-               int struck, Vec2 from, StrokeKind kind, Vec2 aim, double power)
+               int struck, Vec2 from, StrokeKind kind, Vec2 aim, double power,
+               BallState[] before, int deadnessFrame)
         {
             Result = result;
             Frames = frames;
@@ -92,6 +112,8 @@ namespace Croquet.Core
             Kind = kind;
             Aim = aim;
             Power = power;
+            Before = before;
+            DeadnessFrame = deadnessFrame;
         }
 
         /// <summary>Where every ball comes to rest in the animation.</summary>
@@ -144,6 +166,9 @@ namespace Croquet.Core
                 wasInPlay[i] = world.Balls[i].InPlay;
             }
 
+            var states = new BallState[game.States.Length];
+            for (int i = 0; i < states.Length; i++) states[i] = game.States[i].Clone();
+
             int struck = striker;
             StrokeResult result;
 
@@ -171,9 +196,14 @@ namespace Croquet.Core
                 result = game.Play(aim, power);
             }
 
-            var frames = Frame(before, wasInPlay, struck, aim, power, world, croquetWith);
+            var frames = Frame(before, wasInPlay, struck, aim, power, world, croquetWith,
+                               out var steps);
+
+            // The world still holds the events of the stroke just resolved.
+            int deadness = FrameOf(steps, DeadnessStep(world, striker, result));
+
             return new Replay(result, frames, striker, pointBefore, struck, before[struck],
-                              kind, aim, power);
+                              kind, aim, power, states, deadness);
         }
 
         /// <summary>
@@ -183,7 +213,8 @@ namespace Croquet.Core
         /// carry the tallies Sim wants to write.
         /// </summary>
         static List<Vec2[]> Frame(Vec2[] before, bool[] wasInPlay, int struck,
-                                  Vec2 aim, double power, World real, int croquetWith)
+                                  Vec2 aim, double power, World real, int croquetWith,
+                                  out List<int> steps)
         {
             var balls = new Ball[before.Length];
             for (int i = 0; i < balls.Length; i++)
@@ -204,6 +235,10 @@ namespace Croquet.Core
 
             var frames = new List<Vec2[]>(256) { Snap(balls) };
 
+            // The substep count reached by each frame, so an event's stamp can
+            // be turned into the frame it happens on.
+            steps = new List<int>(256) { scratch.Step };
+
             bool moving = true;
             while (moving && frames.Count < MaxFrames)
             {
@@ -211,9 +246,49 @@ namespace Croquet.Core
                     moving = Sim.Step(scratch, StepDt);
 
                 frames.Add(Snap(balls));
+                steps.Add(scratch.Step);
             }
 
             return frames;
+        }
+
+        /// <summary>
+        /// The substep the striker's deadness changed on, or int.MaxValue if
+        /// the stroke did not change it.
+        /// </summary>
+        static int DeadnessStep(World world, int striker, StrokeResult r)
+        {
+            int at = int.MaxValue;
+
+            // A foul put everything back; nothing about deadness happened.
+            if (r.WicketedFoul >= 0) return at;
+
+            if (r.Roqueted >= 0)
+                foreach (var e in world.Events)
+                    if (e.Kind == EventKind.BallContact && (e.Ball == striker || e.Other == striker))
+                    {
+                        at = e.Step;
+                        break;
+                    }
+
+            // The first WICKET scored revives; the turning stake revives nobody.
+            foreach (int point in r.PointsScored)
+            {
+                if (world.Field.IsPeg(point)) continue;
+                int s = world.StepRanPoint(striker, point);
+                if (s >= 0 && s < at) at = s;
+                break;
+            }
+
+            return at;
+        }
+
+        /// <summary>The first frame that has reached this substep; the last if none has.</summary>
+        static int FrameOf(List<int> steps, int step)
+        {
+            for (int k = 0; k < steps.Count; k++)
+                if (steps[k] >= step) return k;
+            return steps.Count - 1;
         }
 
         static Vec2[] Snap(Ball[] balls)

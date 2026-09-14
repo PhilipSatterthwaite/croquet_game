@@ -1232,6 +1232,17 @@ stroke report is held back the same way, for the same reason.
 
 `ReplayTests.A_replay_remembers_the_point_the_stroke_was_for` guards it.
 
+**Deadness waits for the film too.** The rules make the striker dead on a ball
+it roquets, or revive it when it runs a wicket, the instant the stroke is played,
+so the chart used to change as the mallet met the ball. `Replay.Before` holds
+every ball's state from before the stroke, and `Replay.DeadnessFrame` is the
+frame the film reaches the contact or the wicket clearance. It is read off the
+real stroke's substep stamps, which map onto the frames exactly because they are
+stepped the same way. `CroquetGame.ShownDead` switches the striker's row on that
+frame and everyone else's when the balls stop; `ShownFinished` holds a
+pegged-out ball's row until then too. `ReplayTests` holds the frame to the
+contact and to the clearance.
+
 **The ring says which hoop; a small triangle says which way.** The course runs
 most hoops both ways at different stages, so a ring alone leaves unsaid the half
 that decides where to stand. The triangle sits inside the ring on the NEAR side,
@@ -1441,7 +1452,10 @@ here is the head coming down the line — so it is a **chevron** drawn back alon
 the aim, and on release it travels into the ball before the shot is played. It
 had a streak trailing back along the path it was drawn over, and that went: it
 read as a second line on the lawn, right beside the aim line, which is the one
-line that has to be read. Not a disc: anything ball-shaped back there
+line that has to be read. The aim line and the split lines go too, the moment the
+swing starts: they stayed up while the head came through and read as a rail it
+was sliding along, when the aim is settled by then and the head is the only thing
+moving. Not a disc: anything ball-shaped back there
 reads as a seventh ball. `Shapes.Chevron` is one tapered sprite rather than two
 rotated bars, which meet at a hard corner and hold their thickness the whole way
 out — the difference between something moving and a piece of clip art.

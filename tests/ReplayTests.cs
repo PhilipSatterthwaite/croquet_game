@@ -45,6 +45,59 @@ namespace Croquet.Core.Tests
         }
 
         [Fact]
+        public void A_replay_says_which_frame_a_roquet_makes_the_striker_dead_on()
+        {
+            // The interface shows deadness as the film reaches it, not as the
+            // ball is struck -- so the frame has to be the contact, neither the
+            // first frame nor the last.
+            var g = NewGame(4, (5, 7), (7, 7));
+
+            var r = Replay.Play(g, new Vec2(1, 0), 3.0);
+
+            Assert.Equal(1, r.Result.Roqueted);
+            Assert.Empty(r.Before[0].Dead);
+            Assert.Contains(1, g.States[0].Dead);
+
+            Assert.InRange(r.DeadnessFrame, 1, r.FrameCount - 2);
+            Assert.Equal(r.Frames[0][1], r.Frames[r.DeadnessFrame - 1][1]);      // not yet hit
+            Assert.NotEqual(r.Frames[0][1], r.Frames[r.DeadnessFrame + 1][1]);   // on its way
+        }
+
+        [Fact]
+        public void A_replay_says_which_frame_running_a_wicket_revives_the_striker_on()
+        {
+            var g = NewGame(4);
+            var f = g.World.Field;
+            var h = f.Hoops[f.HoopFor(0)];
+            g.World.Balls[0].Pos = new Vec2(h.Center.X - 0.45, h.Center.Y);
+            g.States[0].Dead.Add(1);
+
+            var r = Replay.Play(g, new Vec2(1, 0), 1.3);
+
+            Assert.Contains(0, r.Result.PointsScored);
+            Assert.Contains(1, r.Before[0].Dead);
+            Assert.Empty(g.States[0].Dead);
+
+            // After the ball has gone through, and not before it is clear.
+            double clear = h.Center.X + h.WireRadius + g.World.Spec.BallRadius;
+            Assert.InRange(r.DeadnessFrame, 1, r.FrameCount - 2);
+            Assert.True(r.Frames[r.DeadnessFrame][0].X > h.Center.X);
+            Assert.True(r.Frames[r.DeadnessFrame - 1][0].X < clear);
+        }
+
+        [Fact]
+        public void A_stroke_that_changes_no_deadness_changes_it_on_the_last_frame()
+        {
+            var g = NewGame(4, (5, 3));
+
+            var r = Replay.Play(g, new Vec2(1, 0), 1.0);
+
+            Assert.Equal(-1, r.Result.Roqueted);
+            Assert.Empty(r.Result.PointsScored);
+            Assert.Equal(r.FrameCount - 1, r.DeadnessFrame);
+        }
+
+        [Fact]
         public void The_last_frame_is_where_the_ball_actually_finished()
         {
             // Exact equality, not a tolerance. The frames are stepped with the

@@ -226,6 +226,39 @@ public class CroquetGame : MonoBehaviour
         Phase == Phase.Rolling && Last != null ? Last.PointBefore
         : Game == null ? 0 : Game.States[Game.Striker].Point;
 
+    /// <summary>The frame of the shot on screen, while one is rolling.</summary>
+    int shownFrame;
+
+    /// <summary>
+    /// Whether a ball is dead on another, as far as the shot on screen has got.
+    ///
+    /// Same reason as <see cref="ShownStriker"/>: the rules make the striker
+    /// dead on a ball it roquets, or revive it when it runs its wicket, the
+    /// instant the stroke is played, so the chart used to change as the mallet
+    /// met the ball. While a shot plays, the striker's row changes on the frame
+    /// the film reaches the contact or the clearance
+    /// (<see cref="Replay.DeadnessFrame"/>), and everybody else's when the
+    /// balls stop.
+    /// </summary>
+    public bool ShownDead(int ball, int on)
+    {
+        if (Game == null) return false;
+
+        var shot = Last;
+        if (Phase == Phase.Rolling && shot != null && shot.Before != null && ball < shot.Before.Length)
+        {
+            bool reached = ball == shot.Striker && shownFrame >= shot.DeadnessFrame;
+            if (!reached) return shot.Before[ball].Dead.Contains(on);
+        }
+        return Game.States[ball].Dead.Contains(on);
+    }
+
+    /// <summary>Whether a ball is round, as far as the shot on screen has got: it goes when the balls stop.</summary>
+    public bool ShownFinished(int ball) =>
+        Phase == Phase.Rolling && Last != null && Last.Before != null && ball < Last.Before.Length
+            ? Last.Before[ball].Finished
+            : Game != null && Game.States[ball].Finished;
+
     void Awake()
     {
         court = GetComponent<CourtView>();
@@ -516,12 +549,14 @@ public class CroquetGame : MonoBehaviour
         // away against the peg rather than blinking out.
         var touch = StakedAt(shot, n);
         var sunk = new float[n];
+        shownFrame = 0;
 
         while (f < last)
         {
             f += Time.deltaTime * Replay.FramesPerSecond * Mathf.Max(0.05f, playbackSpeed);
 
             int i = Mathf.Min(last, Mathf.FloorToInt(f));
+            shownFrame = i;
             int j = Mathf.Min(last, i + 1);
             float t = Mathf.Clamp01(f - i);
 
@@ -550,6 +585,8 @@ public class CroquetGame : MonoBehaviour
 
             yield return null;
         }
+
+        shownFrame = last;
 
         // A ball that met its peg near the end of the stroke is still sinking;
         // let it finish rather than cutting it off.

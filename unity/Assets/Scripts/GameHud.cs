@@ -576,7 +576,9 @@ public class GameHud : MonoBehaviour
 
         for (int i = 0; i < MaxBalls; i++)
         {
-            bool playing = i < count && !g.States[i].Finished;
+            // What the shot on screen has got to, not what the rules already
+            // know: see CroquetGame.ShownDead.
+            bool playing = i < count && !game.ShownFinished(i);
             deadRows[i].gameObject.SetActive(playing);
             if (!playing) continue;
 
@@ -586,7 +588,7 @@ public class GameHud : MonoBehaviour
             {
                 int j = Other(i, k);
 
-                bool dead = j < count && g.States[i].Dead.Contains(j);
+                bool dead = j < count && game.ShownDead(i, j);
                 if (dead && !wasDead[i][k]) litAt[i][k] = Time.time;
                 wasDead[i][k] = dead;
 
