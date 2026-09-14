@@ -461,7 +461,7 @@ public class AimControl : MonoBehaviour
         SetAngle(baseAngle);
 
         // Drawing back: one smooth pull to the strength it wants.
-        yield return Sweep(0.5f, t =>
+        yield return Sweep(0.5f / Pace, t =>
         {
             pull = finalPull * (t * t * (3 - 2 * t));
         });
@@ -470,7 +470,7 @@ public class AimControl : MonoBehaviour
         // stroke gets. The machine plays with the same hands.
         pull = finalPull;
         Draw(robotFrom, aim, true, pull);
-        yield return new WaitForSeconds(0.18f);
+        yield return new WaitForSeconds(0.18f / Pace);
 
         haveAim = true;
         yield return Swing();
@@ -481,6 +481,9 @@ public class AimControl : MonoBehaviour
     }
 
     void SetAngle(float a) => aim = new Vec2(Mathf.Cos(a), Mathf.Sin(a));
+
+    /// <summary>The bot speed for the machine at the ball, read live so a change takes at once.</summary>
+    float Pace => game.PaceFor(game.Game.Striker);
 
     IEnumerator Sweep(float seconds, System.Action<float> step)
     {
@@ -729,9 +732,12 @@ public class AimControl : MonoBehaviour
         // the aim is settled by now, and the head is the only thing moving.
         HideAim();
 
-        for (float e = 0; e < SwingTime; e += Time.deltaTime)
+        // The machine's swing is hurried with the rest of its stroke.
+        float time = SwingTime / (robot ? Pace : 1f);
+
+        for (float e = 0; e < time; e += Time.deltaTime)
         {
-            float t = Mathf.Clamp01(e / SwingTime);
+            float t = Mathf.Clamp01(e / time);
 
             // Fast into the ball rather than even: a stroke accelerates.
             pull = Mathf.Lerp(from, 0, t * t);

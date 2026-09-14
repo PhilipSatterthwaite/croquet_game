@@ -129,6 +129,43 @@ public class CroquetGame : MonoBehaviour
     [Range(0f, 2f)] public float pauseBetweenStrokes = 0.5f;
 
     /// <summary>
+    /// How fast the machine's strokes play: 1, 2 or 4. Set from the toggle
+    /// beside the Menu button.
+    ///
+    /// Static, so it survives Play again and the trip back through the menu:
+    /// somebody watching the machine at 4x wants 4x next game too.
+    /// </summary>
+    public static float BotSpeed = 1f;
+
+    /// <summary>The speeds the toggle steps round, in order.</summary>
+    public static readonly float[] BotSpeeds = { 1f, 2f, 4f };
+
+    public static void NextBotSpeed()
+    {
+        int i = System.Array.IndexOf(BotSpeeds, BotSpeed);
+        BotSpeed = BotSpeeds[(i + 1) % BotSpeeds.Length];
+    }
+
+    /// <summary>
+    /// How much faster than life to play anything belonging to this ball's
+    /// stroke: the bot speed if the machine plays it, otherwise 1. A person's
+    /// own strokes are never hurried -- one you are about to judge, or have just
+    /// played, is not something to rush past.
+    /// </summary>
+    public float PaceFor(int ball) => IsBot(ball) ? BotSpeed : 1f;
+
+    /// <summary>Whether the machine plays any ball, so the speed toggle has something to do.</summary>
+    public bool HasBots
+    {
+        get
+        {
+            for (int i = 0; i < hands.Length; i++)
+                if (hands[i] != Hand.Human) return true;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// How close the view comes in once a game starts. The menu shows the whole
     /// court behind it, which is the right picture for choosing a court and the
     /// wrong one for playing on it.
@@ -386,7 +423,10 @@ public class CroquetGame : MonoBehaviour
             if (Over()) yield break;
 
             Phase = Phase.Between;
-            yield return new WaitForSeconds(pauseBetweenStrokes);
+
+            // Hurried when either side of the pause is the machine's stroke.
+            float pace = Mathf.Max(PaceFor(Game.Striker), Last == null ? 1f : PaceFor(Last.Striker));
+            yield return new WaitForSeconds(pauseBetweenStrokes / pace);
         }
     }
 
@@ -553,7 +593,9 @@ public class CroquetGame : MonoBehaviour
 
         while (f < last)
         {
-            f += Time.deltaTime * Replay.FramesPerSecond * Mathf.Max(0.05f, playbackSpeed);
+            // Read every frame, so changing the bot speed mid-shot takes at once.
+            f += Time.deltaTime * Replay.FramesPerSecond * Mathf.Max(0.05f, playbackSpeed)
+                 * PaceFor(shot.Striker);
 
             int i = Mathf.Min(last, Mathf.FloorToInt(f));
             shownFrame = i;
@@ -617,11 +659,12 @@ public class CroquetGame : MonoBehaviour
         if (moved)
         {
             if (shot.Result.WicketedFoul >= 0)
-                for (float w = 0; w < FoulPause; w += Time.deltaTime) yield return null;
+                for (float w = 0; w < FoulPause; w += Time.deltaTime * PaceFor(shot.Striker))
+                    yield return null;
 
             for (float g = 0; g < GlideSeconds;)
             {
-                g += Time.deltaTime;
+                g += Time.deltaTime * PaceFor(shot.Striker);
                 float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(g / GlideSeconds));
                 for (int k = 0; k < n; k++)
                     if (touch[k] < 0 && Game.World.Balls[k].InPlay)
@@ -652,7 +695,7 @@ public class CroquetGame : MonoBehaviour
     /// </summary>
     void Sink(int k, Replay shot, int frame, float[] sunk)
     {
-        sunk[k] += Time.deltaTime;
+        sunk[k] += Time.deltaTime * PaceFor(shot.Striker);
         float fade = 1f - Mathf.Clamp01(sunk[k] / SinkSeconds);
         Place(k, ToVector(shot.Frames[frame][k]), force: fade > 0f, fade: fade);
     }

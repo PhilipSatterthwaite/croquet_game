@@ -38,7 +38,7 @@ public class GameHud : MonoBehaviour
     readonly List<Image> ticks = new List<Image>();
 
     RectTransform ways;
-    Button place, menuButton;
+    Button place, menuButton, speedButton;
     readonly List<Button> wayButtons = new List<Button>();
     readonly List<BonusWay> wayKinds = new List<BonusWay>();
 
@@ -96,6 +96,18 @@ public class GameHud : MonoBehaviour
         menuButton = Ui.Press(canvas.transform, "Menu", () => pause.Open(), 15, 36);
         menuButton.Pin(new Vector2(1, 1), new Vector2(-18, -18), new Vector2(96, 36));
         menuButton.colors = Ui.Scheme(Ui.Panel);
+
+        // Beside it, how fast the machine's strokes play. One button stepping
+        // round 1x, 2x and 4x rather than three of them: it is changed now and
+        // then and read at a glance, and three buttons is a control panel.
+        speedButton = Ui.Press(canvas.transform, SpeedLabel(), () =>
+        {
+            CroquetGame.NextBotSpeed();
+            speedButton.SetText(SpeedLabel());
+        }, 15, 36);
+        speedButton.Pin(new Vector2(1, 1), new Vector2(-(18 + 96 + SpeedGap), -18),
+                        new Vector2(SpeedWidth, 36));
+        speedButton.colors = Ui.Scheme(Ui.Panel);
 
         BuildNotice();
         BuildWinner();
@@ -321,12 +333,20 @@ public class GameHud : MonoBehaviour
     /// <summary>Where the strip starts: the power bar's margin and width, and a gap.</summary>
     const float DeadLeft = 18 + 460 + 16;
 
-    /// <summary>What the Menu button takes off the right-hand end: its margin, width and a gap.</summary>
-    const float MenuRoom = 18 + 96 + 16;
+    /// <summary>The bot speed toggle's width, and the gap between it and the Menu button.</summary>
+    const float SpeedWidth = 56f, SpeedGap = 8f;
+
+    static string SpeedLabel() => CroquetGame.BotSpeed + "x";
+
+    /// <summary>
+    /// What the buttons take off the right-hand end: the margin, the Menu
+    /// button, the speed toggle beside it, and a gap.
+    /// </summary>
+    const float MenuRoom = 18 + 96 + SpeedGap + SpeedWidth + 16;
 
     /// <summary>
     /// Scales the strip down when the space between the power bar and the Menu
-    /// button is narrower than it is. On a 16:9 screen that space is about 625
+    /// button is narrower than it is. On a 16:9 screen that space is about 560
     /// canvas units against a strip of about 680; on a wider phone it fits at
     /// full size and this leaves it alone.
     /// </summary>
@@ -464,6 +484,7 @@ public class GameHud : MonoBehaviour
         meterRow.gameObject.SetActive(!ended);
         deadPanel.gameObject.SetActive(!ended);
         menuButton.gameObject.SetActive(!ended);
+        speedButton.gameObject.SetActive(!ended && game.HasBots);
 
         Notice(ended);
 

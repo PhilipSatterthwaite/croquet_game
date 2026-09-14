@@ -894,6 +894,15 @@ In the game, `PauseMenu` offers exactly two things: Resume, and end the game
 and go back to the menu. Escape opens and closes it. It sets the turn aside —
 the machine's search stops — rather than freezing time.
 
+**Beside the Menu button is a bot speed toggle** that steps round 1x, 2x and 4x.
+It hurries everything belonging to a machine's stroke: the draw back, the swing,
+the roll, a ball sinking at its peg or sliding back after a foul, and the pause
+either side. It never hurries a person's, because a stroke you are about to judge
+or have just played is not something to rush past. It cannot hurry the search,
+which is already about a tenth of a second. `CroquetGame.BotSpeed` is static, so
+the choice survives Play again and a trip through the menu, and the toggle is
+hidden when no ball is the machine's.
+
 **The view can be taken during a shot.** While a shot plays the game points
 the camera at the moving ball every frame, and a look around used to be only an
 offset from that, so the view kept chasing the ball wherever you dragged it.
@@ -978,7 +987,7 @@ What is left is what the lawn genuinely cannot show:
   dead on nobody. In line with the power bar, starting just to its right, so the
   top edge reads as one strip of instruments. Six pairs side by side come to about
   680 canvas units and the room between the power bar and the Menu button on a
-  16:9 screen is about 625, so `GameHud.FitDeadness` scales the strip down to fit
+  16:9 screen is about 560 with the speed toggle there, so `GameHud.FitDeadness` scales the strip down to fit
   that room rather than letting it run under the button; on a wider phone it
   stays full size.
 
