@@ -221,8 +221,8 @@ public class CroquetGame : MonoBehaviour
     readonly List<SpriteRenderer> bound = new List<SpriteRenderer>();
     readonly List<SpriteRenderer> boundRim = new List<SpriteRenderer>();
 
-    /// <summary>Per ball, per badge kind: rim, disc and glyph. See <see cref="ShowBadges"/>.</summary>
-    readonly List<SpriteRenderer[]> badges = new List<SpriteRenderer[]>();
+    /// <summary>Per ball: the dead-on sign, the rover's glow, the bridged ripple. See <see cref="ShowSigns"/>.</summary>
+    readonly List<BallSigns> signs = new List<BallSigns>();
     bool[] boundShown = new bool[0];
 
     readonly Dictionary<Hand, Bot> bots = new Dictionary<Hand, Bot>();
@@ -851,15 +851,14 @@ public class CroquetGame : MonoBehaviour
         foreach (var g in glints) if (g != null) Destroy(g.gameObject);
         foreach (var b in bound) if (b != null) Destroy(b.gameObject);
         foreach (var b in boundRim) if (b != null) Destroy(b.gameObject);
-        foreach (var set in badges)
-            foreach (var p in set) if (p != null) Destroy(p.gameObject);
+        foreach (var sign in signs) sign.Destroy();
         discs.Clear();
         rims.Clear();
         seats.Clear();
         glints.Clear();
         bound.Clear();
         boundRim.Clear();
-        badges.Clear();
+        signs.Clear();
 
         for (int i = 0; i < count; i++)
         {
@@ -889,17 +888,19 @@ public class CroquetGame : MonoBehaviour
             bound.Add(Shapes.Piece(root, "Ball " + i + " bound", Shapes.Triangle,
                                    Marked(ColourOf(i)), Layer.Bound));
 
-            var set = new SpriteRenderer[BadgeKinds * 3];
-            for (int k = 0; k < BadgeKinds; k++)
+            var marks = new BallSigns
             {
-                set[k * 3] = Shapes.Piece(root, "Ball " + i + " badge rim", Shapes.Disc,
-                                          new Color(1, 1, 1, 0.92f), Layer.BadgeRim);
-                set[k * 3 + 1] = Shapes.Piece(root, "Ball " + i + " badge", Shapes.Disc,
-                                              BadgeBack, Layer.Badge);
-                set[k * 3 + 2] = Shapes.Piece(root, "Ball " + i + " badge glyph", GlyphFor(k),
-                                              GlyphPaint(k), Layer.BadgeGlyph);
-            }
-            badges.Add(set);
+                Aura = Shapes.Piece(root, "Ball " + i + " rover glow", Shapes.Shadow,
+                                    RoverGold, Layer.Aura),
+                Ripple = Shapes.Piece(root, "Ball " + i + " bridged ripple", Shapes.Ring,
+                                      Color.white, Layer.Aura),
+                NoRim = Shapes.Piece(root, "Ball " + i + " dead sign rim", Shapes.NoSignRim,
+                                     new Color(0, 0, 0, 0.5f), Layer.SignRim),
+                No = Shapes.Piece(root, "Ball " + i + " dead sign", Shapes.NoSign,
+                                  NoRed, Layer.Sign)
+            };
+            marks.Hide();
+            signs.Add(marks);
         }
 
         if (marker == null)
@@ -1144,8 +1145,8 @@ public class CroquetGame : MonoBehaviour
     {
         bool on = force || Game.World.Balls[i].InPlay;
 
-        // Badges follow the ball as drawn, and go the moment it starts to sink.
-        ShowBadges(i, at, on && fade >= 0.999f);
+        // The signs follow the ball as drawn, and go the moment it starts to sink.
+        ShowSigns(i, at, on && fade >= 0.999f);
         discs[i].gameObject.SetActive(on);
         rims[i].gameObject.SetActive(on);
         seats[i].gameObject.SetActive(on);
@@ -1215,69 +1216,186 @@ public class CroquetGame : MonoBehaviour
         marker.color = new Color(1, 1, 1, WaitingForYou ? 0.95f : 0.45f);
     }
 
-    // ---- badges -----------------------------------------------------------
+    // ---- signs ------------------------------------------------------------
 
-    /// <summary>Dead on, rover, bridged: the order they sit in, left to right.</summary>
-    const int BadgeKinds = 3;
+    /// <summary>One ball's signs, and when each state last came or went.</summary>
+    sealed class BallSigns
+    {
+        public SpriteRenderer No, NoRim, Aura, Ripple;
+        public Flip Dead, Rover, Bridged;
+
+        public void Hide()
+        {
+            No.gameObject.SetActive(false);
+            NoRim.gameObject.SetActive(false);
+            Aura.gameObject.SetActive(false);
+            Ripple.gameObject.SetActive(false);
+        }
+
+        public void Destroy()
+        {
+            foreach (var r in new[] { No, NoRim, Aura, Ripple })
+                if (r != null) UnityEngine.Object.Destroy(r.gameObject);
+        }
+    }
+
+    /// <summary>A state that is on or off, and the moment it last changed.</summary>
+    struct Flip
+    {
+        public bool On;
+        public float Since;
+
+        /// <summary>Follows the state, noting when it changes; an arrival can be held back a little.</summary>
+        public void Follow(bool on, float now, float delay = 0f)
+        {
+            if (on == On) return;
+            On = on;
+            Since = now + (on ? delay : 0f);
+        }
+
+        public float Age(float now) => now - Since;
+    }
+
+    static readonly Color NoRed = new Color(0.93f, 0.13f, 0.12f, 0.95f);
+    static readonly Color RoverGold = new Color(1f, 0.78f, 0.20f, 1f);
+
+    /// <summary>How long the dead-on sign takes to slam on, and to blow away.</summary>
+    const float SlamTime = 0.32f, GoneTime = 0.22f;
 
     /// <summary>
-    /// A badge's size as a share of the ball AS DRAWN, and how far up and right
-    /// of the ball's centre the first sits, in the same share. Against the drawn
-    /// ball rather than in metres, so they stay tucked against it when the pixel
-    /// floor is making the ball bigger than life.
-    /// </summary>
-    const float BadgeShare = 0.6f, BadgeReach = 0.45f;
-
-    static readonly Color BadgeBack = new Color(0.07f, 0.08f, 0.07f, 0.92f);
-    static readonly Color RoverGold = new Color(1f, 0.80f, 0.22f, 1f);
-
-    static Sprite GlyphFor(int kind) =>
-        kind == 0 ? Shapes.Cross : kind == 1 ? Shapes.Star : Shapes.Arch;
-
-    static Color GlyphPaint(int kind) => kind == 1 ? RoverGold : Color.white;
-
-    /// <summary>
-    /// The small round badges tucked at a ball's top-right: a white cross on a
-    /// ball the striker is dead on, a gold star on a rover, a white wicket on a
-    /// bridged ball. One per state, side by side, packed from the ball outward
-    /// in that order, so a ball with one badge always has it in the same place.
+    /// What a ball is, drawn on the ball rather than beside it.
     ///
-    /// Each is a dark disc on a thin white rim: dark so a white glyph reads on
-    /// any lawn and any ball, the rim so the black ball's badge does not vanish
-    /// into the ball. True colours only, and nothing covering the ball.
+    ///   * Dead on: a red no-entry sign over it, slammed on -- in from twice the
+    ///     size and a quarter turn back, overshooting before it settles -- then
+    ///     throbbing slowly, and blown away when the deadness lifts.
+    ///   * A rover: a gold glow underneath it, swelling in and breathing.
+    ///   * Bridged: rings going out from it one after another, a field round a
+    ///     ball nothing may roquet.
     ///
-    /// They read the SHOWN state -- what the shot on screen has got to, as the
-    /// deadness chart does -- so none of them changes while the stroke that
+    /// It replaced a row of little badges at each ball's shoulder, which read
+    /// as clutter and said nothing at a glance. These read the SHOWN state, as
+    /// the deadness chart does, so none of them changes while the stroke that
     /// changes it is still rolling.
     /// </summary>
-    void ShowBadges(int i, Vector2 at, bool on)
+    void ShowSigns(int i, Vector2 at, bool on)
     {
-        if (i >= badges.Count) return;
-        var set = badges[i];
+        if (i >= signs.Count) return;
+        var s = signs[i];
 
         bool live = on && Game != null && Game.Winner == null && Phase != Phase.Paused;
         int striker = ShownStriker;
-
+        float now = Time.time;
         float d = BallDiameter;
-        float size = d * BadgeShare;
-        var first = at + new Vector2(d * BadgeReach, d * BadgeReach);
 
-        int slot = 0;
-        for (int k = 0; k < BadgeKinds; k++)
+        // Held back a touch by ball, so a new striker's deadness lands across
+        // the lawn as a ripple rather than all in the same frame.
+        s.Dead.Follow(live && i != striker && ShownDead(striker, i), now, 0.05f * i);
+        s.Rover.Follow(live && ShownRover(i), now);
+        s.Bridged.Follow(live && ShownBridged(i), now);
+
+        DrawNo(s, at, d, now);
+        DrawGlow(s, at, d, now);
+        DrawRipple(s, at, d, now);
+    }
+
+    void DrawNo(BallSigns s, Vector2 at, float d, float now)
+    {
+        float age = s.Dead.Age(now);
+        float scale, alpha, turn = 0f;
+
+        if (s.Dead.On && age >= 0f)
         {
-            bool show = live && (k == 0 ? i != striker && ShownDead(striker, i)
-                               : k == 1 ? ShownRover(i)
-                               : ShownBridged(i));
-
-            for (int p = 0; p < 3; p++) set[k * 3 + p].gameObject.SetActive(show);
-            if (!show) continue;
-
-            var c = first + new Vector2(slot * size * 1.12f, 0);
-            set[k * 3].Put(c.x, c.y, size * 1.2f, size * 1.2f);
-            set[k * 3 + 1].Put(c.x, c.y, size, size);
-            set[k * 3 + 2].Put(c.x, c.y, size * 0.72f, size * 0.72f);
-            slot++;
+            if (age < SlamTime)
+            {
+                float u = BackOut(age / SlamTime);
+                scale = Mathf.LerpUnclamped(2.2f, 1f, u);
+                turn = Mathf.LerpUnclamped(-90f, 0f, u);
+                alpha = Mathf.Clamp01(age / (SlamTime * 0.4f));
+            }
+            else
+            {
+                // A slow throb, so it reads as a live warning and not a sticker.
+                float beat = Mathf.Sin((age - SlamTime) * 4f);
+                scale = 1f + 0.035f * beat;
+                alpha = 0.85f + 0.1f * beat;
+            }
         }
+        else if (!s.Dead.On && age < GoneTime)
+        {
+            float u = age / GoneTime;
+            scale = 1f + 0.35f * u;
+            alpha = 1f - u;
+        }
+        else
+        {
+            s.No.gameObject.SetActive(false);
+            s.NoRim.gameObject.SetActive(false);
+            return;
+        }
+
+        float size = d * 1.75f * scale;
+        var spin = Quaternion.Euler(0, 0, turn);
+
+        s.No.gameObject.SetActive(true);
+        s.NoRim.gameObject.SetActive(true);
+        s.No.Put(at.x, at.y, size, size);
+        s.NoRim.Put(at.x, at.y, size, size);
+        s.No.transform.localRotation = spin;
+        s.NoRim.transform.localRotation = spin;
+
+        var red = NoRed;
+        red.a *= alpha;
+        s.No.color = red;
+        s.NoRim.color = new Color(0, 0, 0, 0.5f * alpha);
+    }
+
+    void DrawGlow(BallSigns s, Vector2 at, float d, float now)
+    {
+        float age = s.Rover.Age(now);
+        float grow, alpha;
+
+        if (s.Rover.On)
+        {
+            grow = BackOut(Mathf.Clamp01(age / 0.45f));
+            alpha = 0.55f + 0.2f * Mathf.Sin(age * 2.6f);
+        }
+        else if (age < 0.3f)
+        {
+            grow = 1f;
+            alpha = 0.55f * (1f - age / 0.3f);
+        }
+        else
+        {
+            s.Aura.gameObject.SetActive(false);
+            return;
+        }
+
+        s.Aura.gameObject.SetActive(true);
+        float size = d * 2.3f * grow;
+        s.Aura.Put(at.x, at.y, size, size);
+
+        var gold = RoverGold;
+        gold.a = alpha;
+        s.Aura.color = gold;
+    }
+
+    void DrawRipple(BallSigns s, Vector2 at, float d, float now)
+    {
+        s.Ripple.gameObject.SetActive(s.Bridged.On);
+        if (!s.Bridged.On) return;
+
+        float u = Mathf.Repeat(s.Bridged.Age(now) / 1.3f, 1f);
+        float size = d * (1.15f + 1.1f * u);
+        s.Ripple.Put(at.x, at.y, size, size);
+        s.Ripple.color = new Color(1f, 1f, 1f, 0.75f * (1f - u) * (1f - u));
+    }
+
+    /// <summary>Eases out past the end and back: the overshoot that makes a thing land.</summary>
+    static float BackOut(float u)
+    {
+        const float c1 = 1.70158f, c3 = c1 + 1f;
+        float v = u - 1f;
+        return 1f + c3 * v * v * v + c1 * v * v;
     }
 
     /// <summary>

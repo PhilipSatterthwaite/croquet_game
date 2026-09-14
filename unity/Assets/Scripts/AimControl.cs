@@ -562,6 +562,11 @@ public class AimControl : MonoBehaviour
         int hit = game.Game.RoquetedBall;
         if (hit < 0) { align.gameObject.SetActive(false); return; }
 
+        // Not for a mallet-head placement: the balls are a head's length apart
+        // and are never struck together, so the line through both of them says
+        // nothing about where either goes.
+        if (game.BonusChoice == BonusWay.MalletHead) { align.gameObject.SetActive(false); return; }
+
         var other = CroquetGame.ToVector(game.Game.World.Balls[hit].Pos);
 
         var span = other - at;

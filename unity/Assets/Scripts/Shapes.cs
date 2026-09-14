@@ -37,18 +37,23 @@ public static class Layer
     public const int FurnitureShadow = 6;
     public const int Furniture = 7;
     public const int FurnitureShine = 8;
-    public const int BallShadow = 9;
-    public const int Ball = 10;
-    public const int Gloss = 11;
+    /// <summary>
+    /// Round a ball, under it: a rover's glow and a bridged ball's ripples.
+    /// Under the ball's own shadow, so the ball still sits on the grass.
+    /// </summary>
+    public const int Aura = 9;
+
+    public const int BallShadow = 10;
+    public const int Ball = 11;
+    public const int Gloss = 12;
 
     // What every OTHER ball is playing for, floating over its hoop. Above the
     // balls, because a ball parked in front of a hoop must not hide the hint
     // saying who else wants it.
-    // The badges tucked against a ball -- dead on, rover, bridged. Above the
-    // ball they describe, and under everything about the stroke being aimed.
-    public const int BadgeRim = 12;
-    public const int Badge = 13;
-    public const int BadgeGlyph = 14;
+    // The sign over a ball the striker is dead on. Above the ball it is
+    // about, and under everything about the stroke being aimed.
+    public const int SignRim = 13;
+    public const int Sign = 14;
 
     public const int BoundRim = 15;
     public const int Bound = 16;
@@ -69,7 +74,7 @@ public static class Layer
 public static class Shapes
 {
     static Sprite solid, disc, ring, sphere, cylinder, wood, shadow, gloss, rounded;
-    static Sprite chevron, fade, line, dashes, gust, grass, triangle, cross, star, arch;
+    static Sprite chevron, fade, line, dashes, gust, grass, triangle, noSign, noSignRim;
     static Material flat;
 
     /// <summary>
@@ -827,56 +832,45 @@ public static class Shapes
         }
     }
 
-    /// <summary>A white cross, one unit across: the badge on a ball the striker is dead on.</summary>
-    public static Sprite Cross
-    {
-        get
-        {
-            if (Spent(cross))
-                cross = Glyph("Cross", p =>
-                    GlyphSegment(p, new Vector2(0.26f, 0.26f), new Vector2(0.74f, 0.74f)) < 0.085f ||
-                    GlyphSegment(p, new Vector2(0.26f, 0.74f), new Vector2(0.74f, 0.26f)) < 0.085f);
-            return cross;
-        }
-    }
-
-    /// <summary>A five-pointed star, one unit across: the badge on a rover.</summary>
-    public static Sprite Star
-    {
-        get
-        {
-            if (Spent(star))
-            {
-                // Sat a touch low, so the points and the notches between the
-                // two lower arms balance about the middle of the badge.
-                var points = new Vector2[10];
-                for (int k = 0; k < 10; k++)
-                {
-                    float a = Mathf.PI / 2 + k * Mathf.PI / 5;
-                    float r = k % 2 == 0 ? 0.40f : 0.17f;
-                    points[k] = new Vector2(0.5f + r * Mathf.Cos(a), 0.47f + r * Mathf.Sin(a));
-                }
-                star = Glyph("Star", p => GlyphInside(p, points));
-            }
-            return star;
-        }
-    }
-
     /// <summary>
-    /// A wicket, one unit across -- two legs and a crown: the badge on a ball
-    /// bridged in the jaws. Rounded where the strokes meet, like the wire.
+    /// A no-entry sign, one unit across: a ring with a bar struck through it
+    /// from top left to bottom right, white, to be tinted red. The ring runs
+    /// from 0.29 to 0.44 of the width from the middle, so drawn at 1.75 times a
+    /// ball's width it sits just clear round the ball with the bar across it.
     /// </summary>
-    public static Sprite Arch
+    public static Sprite NoSign
     {
         get
         {
-            if (Spent(arch))
-                arch = Glyph("Arch", p =>
-                    GlyphSegment(p, new Vector2(0.30f, 0.22f), new Vector2(0.30f, 0.72f)) < 0.075f ||
-                    GlyphSegment(p, new Vector2(0.70f, 0.22f), new Vector2(0.70f, 0.72f)) < 0.075f ||
-                    GlyphSegment(p, new Vector2(0.30f, 0.72f), new Vector2(0.70f, 0.72f)) < 0.075f);
-            return arch;
+            if (Spent(noSign)) noSign = ProhibitionSign("No sign", 0f);
+            return noSign;
         }
+    }
+
+    /// <summary>The same sign with every stroke fattened, drawn dark behind it as an outline.</summary>
+    public static Sprite NoSignRim
+    {
+        get
+        {
+            if (Spent(noSignRim)) noSignRim = ProhibitionSign("No sign rim", 0.035f);
+            return noSignRim;
+        }
+    }
+
+    static Sprite ProhibitionSign(string name, float grow)
+    {
+        const float middle = 0.365f, half = 0.075f;
+        var centre = new Vector2(0.5f, 0.5f);
+        var from = new Vector2(0.2f, 0.8f);
+        var to = new Vector2(0.8f, 0.2f);
+
+        return Glyph(name, p =>
+        {
+            float r = Vector2.Distance(p, centre);
+            bool ring = Mathf.Abs(r - middle) < half + grow;
+            bool bar = r < middle && GlyphSegment(p, from, to) < half + grow;
+            return ring || bar;
+        });
     }
 
     /// <summary>
@@ -911,17 +905,6 @@ public static class Shapes
         var ab = b - a;
         float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
         return Vector2.Distance(p, a + ab * t);
-    }
-
-    /// <summary>Whether a point is inside a polygon, by the even-odd rule.</summary>
-    static bool GlyphInside(Vector2 p, Vector2[] poly)
-    {
-        bool inside = false;
-        for (int i = 0, j = poly.Length - 1; i < poly.Length; j = i++)
-            if ((poly[i].y > p.y) != (poly[j].y > p.y) &&
-                p.x < (poly[j].x - poly[i].x) * (p.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x)
-                inside = !inside;
-        return inside;
     }
 
     /// <summary>

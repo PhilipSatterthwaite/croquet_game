@@ -195,7 +195,7 @@ namespace Croquet.Core.Tests
         [Fact]
         public void A_replay_remembers_the_bridged_ball_after_the_turn_moves_on()
         {
-            // The badge on a bridged ball must not vanish the moment the next
+            // The mark on a bridged ball must not vanish the moment the next
             // player strikes: ending that stroke's turn has already moved on.
             var g = NewGame(Option(true));
             RedStuckInTheJaws(g);

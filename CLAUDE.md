@@ -1252,18 +1252,19 @@ frame and everyone else's when the balls stop; `ShownFinished` holds a
 pegged-out ball's row until then too. `ReplayTests` holds the frame to the
 contact and to the clearance.
 
-**Badges say what a ball is, beside the ball.** Small round badges tucked at a
-ball's top-right, one per state and side by side when a ball has several, each a
-dark disc on a thin white rim with a glyph: a white cross on a ball the striker
-is dead on, a gold star on a rover (every wicket run, only the finishing stake
-left), and a white wicket on a bridged ball, the one stuck in the jaws that
-Option 11 protects from the player to move. They are sized against the ball as
-drawn, so they stay tucked against it at any zoom, and they read the same
-held-back state as the chart (`ShownDead`, `ShownRover`, `ShownBridged`), so none
-of them changes while the shot that changes it is still rolling.
-`Replay.WicketedBefore` is what makes that possible for the bridge: ending a turn
-works the protection out afresh, so the Game has forgotten it by the time the
-next player's ball is moving.
+**What a ball is gets drawn on the ball.** A ball the striker is dead on wears a
+red no-entry sign centred on it: slammed on, in from twice the size and a quarter
+turn back with an overshoot, then throbbing slowly, and blown away when the
+deadness lifts. A rover glows gold underneath. A bridged ball, the one stuck in
+the jaws that Option 11 protects from the player to move, sends rings out from
+itself one after another. They replaced a row of small badges at each ball's
+shoulder, which read as clutter. All of them read the same held-back state as
+the chart (`ShownDead`, `ShownRover`, `ShownBridged`), so none changes while the
+shot that changes it is still rolling; a new striker's deadness lands a
+twentieth of a second apart ball by ball, as a ripple rather than all at once.
+`Replay.WicketedBefore` is what keeps the bridge up: ending a turn works the
+protection out afresh, so the Game has forgotten it by the time the next
+player's ball is moving.
 
 **The ring says which hoop; a small triangle says which way.** The course runs
 most hoops both ways at different stages, so a ring alone leaves unsaid the half
@@ -1550,7 +1551,9 @@ visible, the **line** is.
 
 So while the striker is being set down, `AimControl.DrawAlignment` draws the
 line of centres out to the boundary — where the other ball goes if it is then
-struck straight. Unlike the aim line this one runs the whole way, because it is
+struck straight. Not for a mallet-head placement: those balls are a head's
+length apart and never struck together, so a line through both said nothing.
+Unlike the aim line this one runs the whole way, because it is
 not making the aim line's promise: where two balls are lined up is geometry and
 exact at any distance, and it is the striking straight along it that is still
 left to get right.
