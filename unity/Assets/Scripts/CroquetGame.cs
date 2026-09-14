@@ -565,11 +565,45 @@ public class CroquetGame : MonoBehaviour
             if (going) yield return null;
         }
 
+        // Balls the rules moved after the rolling stopped -- one brought back in
+        // off the lawn, or every ball a wicketed-ball foul puts back where it
+        // was -- slide there rather than jump, so the eye can follow what the
+        // rules did. A foul gets a beat of stillness first: the shot happened,
+        // and then it was undone, and those are two things to see.
+        var end = shot.LastFrame;
+        bool moved = false;
+        for (int k = 0; k < n; k++)
+            if (touch[k] < 0 && Game.World.Balls[k].InPlay &&
+                (Game.World.Balls[k].Pos - end[k]).Length > 1e-6)
+                moved = true;
+
+        if (moved)
+        {
+            if (shot.Result.WicketedFoul >= 0)
+                for (float w = 0; w < FoulPause; w += Time.deltaTime) yield return null;
+
+            for (float g = 0; g < GlideSeconds;)
+            {
+                g += Time.deltaTime;
+                float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(g / GlideSeconds));
+                for (int k = 0; k < n; k++)
+                    if (touch[k] < 0 && Game.World.Balls[k].InPlay)
+                        Place(k, Vector2.Lerp(ToVector(end[k]), ToVector(Game.World.Balls[k].Pos), u));
+                yield return null;
+            }
+        }
+
         // Settle onto the real state rather than the last frame. A ball that
         // went off the lawn is brought back a mallet's length in by the rules
         // after the rolling stopped, so the truth is in the Game, not the film.
         ShowLive();
     }
+
+    /// <summary>How long a ball the rules have moved takes to slide to where they put it.</summary>
+    const float GlideSeconds = 0.45f;
+
+    /// <summary>The pause before a wicketed-ball foul puts the balls back.</summary>
+    const float FoulPause = 0.5f;
 
     /// <summary>How long a pegged-out ball takes to sink away against its peg.</summary>
     const float SinkSeconds = 0.45f;

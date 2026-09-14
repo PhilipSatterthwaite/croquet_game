@@ -762,6 +762,10 @@ namespace Croquet.Core
                 if (j == me || !game.World.Balls[j].InPlay) continue;
                 if (!game.IsAlive(j)) continue;
 
+                // Stuck in the jaws under Option 11: a roquet is a foul, so
+                // there is nothing here worth aiming at.
+                if (game.IsProtected(j)) continue;
+
                 var target = game.World.Balls[j].Pos;
                 Toward(target, "roquet " + j);
 
@@ -1109,6 +1113,10 @@ namespace Croquet.Core
             // Losing the turn is the real cost of a bad stroke.
             if (r.TurnEnded) s -= k.TurnEnded;
             if (r.EndedByOutOfBounds) s -= k.WentOut;   // and it was avoidable
+
+            // A wicketed-ball foul throws away the side's next turn as well as
+            // this one.
+            if (r.WicketedFoul >= 0) s -= k.TurnEnded;
 
             if (!after.World.Balls[me].InPlay) return s;   // round; nothing else matters
 

@@ -159,6 +159,28 @@ namespace Croquet.Core
         }
 
         /// <summary>
+        /// The hoop whose jaws this ball is stuck in, or -1: not clear of either
+        /// face, and between the uprights. Ball C in the USCA diagram, and what
+        /// Challenging Option 11 calls "wicketed".
+        ///
+        /// Between the uprights means the centre is inside the gap. A ball
+        /// resting against the outside of a post can overlap the hoop's
+        /// thickness too, but it is beside the wicket, not in it.
+        /// </summary>
+        public int JawsOf(int ball)
+        {
+            var p = Balls[ball].Pos;
+            for (int i = 0; i < Field.Hoops.Length; i++)
+            {
+                var h = Field.Hoops[i];
+                if (Math.Abs(p.X - h.Center.X) < h.WireRadius + Spec.BallRadius &&
+                    Math.Abs(p.Y - h.Center.Y) < h.HalfGap)
+                    return i;
+            }
+            return -1;
+        }
+
+        /// <summary>
         /// Hands the jaws state to a copy of this world.
         ///
         /// Game.Clone builds a fresh World, which would otherwise start every

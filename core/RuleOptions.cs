@@ -29,11 +29,24 @@ namespace Croquet.Core
         /// </summary>
         public bool OutOfBoundsEndsTurn = true;
 
+        /// <summary>
+        /// Option 11, "wicketed ball". A striker whose turn ends with its ball
+        /// stuck in the jaws of a wicket is protected for the next player's
+        /// turn: an opponent who roquets it has both balls replaced, the turn
+        /// ends, and that opponent's side loses its next turn. Cannoning it --
+        /// another ball knocking it -- carries no penalty, and neither does
+        /// touching it with a stroke that was not a roquet.
+        ///
+        /// Nine-wicket only; association croquet has no such law.
+        /// </summary>
+        public bool WicketedBall = true;
+
         /// <summary>The basic game: no options in force.</summary>
         public static RuleOptions Basic => new RuleOptions
         {
             CarryOverDeadness = false,
-            OutOfBoundsEndsTurn = false
+            OutOfBoundsEndsTurn = false,
+            WicketedBall = false
         };
     }
 }

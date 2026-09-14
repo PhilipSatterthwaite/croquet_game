@@ -25,6 +25,7 @@ namespace Croquet.Core
 
         public bool CarryOverDeadness;
         public bool OutOfBoundsEndsTurn;
+        public bool WicketedBall;
 
         /// <summary>The exact court. Null means the variant's own.</summary>
         public CourtSpec Court;
@@ -32,7 +33,8 @@ namespace Croquet.Core
         public RuleOptions Options => new RuleOptions
         {
             CarryOverDeadness = CarryOverDeadness,
-            OutOfBoundsEndsTurn = OutOfBoundsEndsTurn
+            OutOfBoundsEndsTurn = OutOfBoundsEndsTurn,
+            WicketedBall = WicketedBall
         };
 
         public MatchSetup Clone() => new MatchSetup
@@ -42,6 +44,7 @@ namespace Croquet.Core
             Teams = Teams,
             CarryOverDeadness = CarryOverDeadness,
             OutOfBoundsEndsTurn = OutOfBoundsEndsTurn,
+            WicketedBall = WicketedBall,
             Court = Court == null ? null : Copy(Court)
         };
 
@@ -88,6 +91,7 @@ namespace Croquet.Core
                 h = Checksum.Mix(h, (ulong)Teams);
                 h = Checksum.Mix(h, CarryOverDeadness ? 1UL : 0UL);
                 h = Checksum.Mix(h, OutOfBoundsEndsTurn ? 1UL : 0UL);
+                h = Checksum.Mix(h, WicketedBall ? 1UL : 0UL);
                 return h;
             }
         }

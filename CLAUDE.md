@@ -177,8 +177,9 @@ jaws is also skipped — any contact after a hoop counts as a roquet.
 ## The rules
 
 `2020_Complete__9_Wicket__Rules.pdf` in the repo root is the USCA official
-rules and is the authority. Basic rules only — none of the Challenging Options
-are in force. When a rule question comes up, read the PDF rather than
+rules and is the authority. The bullets below are the basic rules
+(`RuleOptions.Basic`); the Unity game plays nine-wicket with Options 1, 2A and 11
+on, which is what `new RuleOptions()` means. When a rule question comes up, read the PDF rather than
 reasoning from what croquet "should" do; several of these are counter-intuitive
 and the first implementation got four of them wrong.
 
@@ -192,7 +193,7 @@ The ones that bite:
   roquet and *the wicket does not count at all*.
 - **Deadness lapses at the start of your next turn**, or when you clear your
   next wicket, whichever comes first. Carry-over deadness is Option 1 and is
-  not in force. Hitting a dead ball costs nothing; it just earns nothing.
+  not part of the basic rules. Hitting a dead ball costs nothing; it just earns nothing.
 - **Out of bounds carries no penalty.** The ball is replaced one mallet length
   (36 in) in, *perpendicular* to the line it crossed, and play continues.
 - **A ball driven through its own wicket by someone else scores the point** for
@@ -200,6 +201,36 @@ The ones that bite:
 - The first bonus shot after a roquet may be taken **four** ways: mallet head,
   foot shot, croquet shot, or from where it lies. The second is always an
   ordinary continuation.
+
+### Wicketed ball (Option 11)
+
+`RuleOptions.WicketedBall`: on in `new RuleOptions()`, off in `Basic`, and
+nine-wicket only. The rulebook gives it one paragraph, and every clause is a
+decision:
+
+- **Wicketed means stuck in the jaws**: not clear of either face, with its
+  centre between the uprights (`World.JawsOf`). The ball is 9.2 cm and the gap
+  17 cm, so Q34's ball wedged against both uprights cannot happen here.
+- **Protected for the next player's turn only.** `Game.Wicketed` is worked out
+  afresh whenever a turn ends, from the ball whose turn it was, so it lasts one
+  turn and lapses on its own. It also lapses the moment the ball is moved.
+- **Only an opponent's roquet is a foul.** The rule explicitly allows cannoning
+  it with another ball, and touching it while dead on it, or after running a
+  wicket, is no roquet at all.
+- **The balls are replaced**, every one of them with its jaws state, because
+  nothing the stroke did is allowed to stand. The foul is caught before anything
+  is scored, so there is nothing in the rules to undo, only the lawn.
+- **The opponents lose their next turn**: the offending *side's* next turn,
+  which with four balls is the partner's. The rulebook's example (Black roquets
+  wicketed Red, Yellow plays, Blue loses its turn, then Red plays) is in
+  `WicketedBallTests` word for word. With every ball for itself, the offender
+  loses its own next turn.
+
+`StrokeResult.WicketedFoul` and `TurnLost` report it. The bot does not aim at a
+protected ball, and scores a foul as a second lost turn. The lawn is only
+snapshotted while a ball is protected, so a search pays nothing for the rule.
+`Checksum` mixes the new state only while it is set, which keeps
+`Reference.Hash` where it was.
 
 ## How a shot resolves
 
@@ -924,6 +955,13 @@ What is left is what the lawn genuinely cannot show:
   quantities sharing a gauge is one of them lying — a bar that is filling has
   to mean the stroke is getting harder — and how long the machine is taking is
   not something anyone waits to read off a scale.
+- **A notice for a wicketed-ball foul**, under the top strip, once the shot
+  has stopped. The balls roll, pause, and slide back to where they were, and a
+  ball's turn is later passed over. Without a word, both look like the game
+  misbehaving. It also says when a turn is lost, and it goes after four seconds.
+  Balls the rules move after the rolling stops glide there over 0.45 s. That
+  covers the replaced balls, and a ball brought back in off the lawn too, which
+  used to jump.
 - **The end of the game**, over the whole screen: the court behind a scrim, who
   won, how far round everybody got, and the way out. The rest of the HUD is
   switched off with it, because there is no stroke left to judge and nobody
@@ -1472,7 +1510,7 @@ exact at any distance, and it is the striking straight along it that is still
 left to get right.
 
 Not built yet: audio, touch gestures beyond what a single pointer gives, shot
-preview, rovers and poison, "wicketed" balls, and the rule that a ball resting
+preview, rovers and poison, and the rule that a ball resting
 within a mallet length of the boundary is brought in.
 
 The scorekeeper app at `../Croquet Score App/index.html` was the original spec

@@ -102,6 +102,20 @@ namespace Croquet.Core
         /// <summary>The turn ended because a ball left the lawn (Option 2A).</summary>
         public bool EndedByOutOfBounds;
 
+        /// <summary>
+        /// The wicketed ball this stroke roqueted against Option 11, or -1. When
+        /// set, every ball is back where it was before the stroke, nothing it
+        /// did counts, the turn is over, and the striker's side has lost its
+        /// next turn.
+        /// </summary>
+        public int WicketedFoul = -1;
+
+        /// <summary>
+        /// A ball whose turn was passed over when this stroke ended the turn,
+        /// because its side had lost it to a wicketed-ball foul, or -1.
+        /// </summary>
+        public int TurnLost = -1;
+
         /// <summary>Strokes the striker still has after this one.</summary>
         public int ShotsLeft;
 
@@ -144,6 +158,33 @@ namespace Croquet.Core
         public int ShotsLeft { get; private set; } = 1;
 
         public int[] Winner { get; private set; }
+
+        /// <summary>
+        /// Challenging Option 11: a ball whose turn ended stuck in the jaws of a
+        /// wicket, protected from being roqueted by the player after it -- or -1.
+        ///
+        /// Worked out afresh each time a turn ends, so the protection lasts
+        /// exactly one turn, the next player's. It also lapses the moment the
+        /// ball is moved, since a ball knocked out of the jaws, or knocked
+        /// about inside them, is no longer the one its owner left there.
+        /// </summary>
+        public int Wicketed { get; private set; } = -1;
+
+        /// <summary>
+        /// The side that roqueted a protected ball and has lost its next turn,
+        /// or -1. Playing every ball for itself, the side is the ball.
+        /// </summary>
+        public int LosesTurn { get; private set; } = -1;
+
+        /// <summary>The side a ball is on; with no sides, each ball is its own.</summary>
+        public int SideOf(int ball) => Side == null ? ball : Side[ball];
+
+        /// <summary>
+        /// Would roqueting this ball now be a wicketed-ball foul? Only an
+        /// opponent can commit one: the rule protects a ball from the other side.
+        /// </summary>
+        public bool IsProtected(int ball) =>
+            Laws.WicketedBall && ball >= 0 && ball == Wicketed && SideOf(ball) != SideOf(Striker);
 
         /// <summary>Ball index -> side. Null means every ball for itself.</summary>
         public readonly int[] Side;
@@ -192,7 +233,9 @@ namespace Croquet.Core
                 Stroke = Stroke,
                 RoquetedBall = RoquetedBall,
                 ShotsLeft = ShotsLeft,
-                Winner = Winner
+                Winner = Winner,
+                Wicketed = Wicketed,
+                LosesTurn = LosesTurn
             };
             World.Balls.CopyTo(g.World.Balls, 0);
 
@@ -253,10 +296,11 @@ namespace Croquet.Core
             if (Stroke == StrokeKind.Bonus)
                 throw new InvalidOperationException("a bonus stroke is owed; use PlayBonus");
 
+            var before = Before();
             World.ClearShot();
             World.Balls[Striker].Vel = direction.Normalized * power;
             Sim.Settle(World);
-            return Resolve();
+            return Resolve(before);
         }
 
         /// <summary>
@@ -272,6 +316,10 @@ namespace Croquet.Core
                 throw new InvalidOperationException("no bonus stroke is owed");
 
             int other = RoquetedBall;
+
+            // Noted before the striker is set down, so a wicketed-ball foul
+            // replaces it where it lay rather than where it was placed.
+            var before = Before();
             if (way != BonusWay.WhereItLies)
                 World.Balls[Striker].Pos = BonusPlacement(way, placement);
 
@@ -291,7 +339,7 @@ namespace Croquet.Core
                 World.Balls[Striker].Vel = aim.Normalized * power;
 
             Sim.Settle(World);
-            return Resolve();
+            return Resolve(before);
         }
 
         /// <summary>Where the striker would be set down, for previewing the choice.</summary>
@@ -311,7 +359,43 @@ namespace Croquet.Core
 
         // ---- resolving ----------------------------------------------------
 
-        StrokeResult Resolve()
+        /// <summary>Where the balls stood before a stroke, for putting them back.</summary>
+        sealed class Lawn
+        {
+            public Vec2[] Pos;
+            public int[,] Sides;
+        }
+
+        /// <summary>
+        /// The lawn as it is, kept only while a ball is protected under Option
+        /// 11 -- the one rule that puts balls back after a stroke. Null the rest
+        /// of the time, so a bot's thousands of candidate strokes pay nothing.
+        /// </summary>
+        Lawn Before()
+        {
+            if (!Laws.WicketedBall || Wicketed < 0) return null;
+
+            var pos = new Vec2[World.Balls.Length];
+            for (int i = 0; i < pos.Length; i++) pos[i] = World.Balls[i].Pos;
+
+            // The jaws state too: a replaced ball has to be on the side of each
+            // hoop it was on, or a ball put back in the jaws could never score
+            // its way out of them.
+            return new Lawn { Pos = pos, Sides = (int[,])World.Side.Clone() };
+        }
+
+        void Restore(Lawn lawn)
+        {
+            for (int i = 0; i < lawn.Pos.Length; i++)
+            {
+                World.Balls[i].Pos = lawn.Pos[i];
+                World.Balls[i].Vel = Vec2.Zero;
+                World.Balls[i].WentOut = false;
+            }
+            Array.Copy(lawn.Sides, World.Side, lawn.Sides.Length);
+        }
+
+        StrokeResult Resolve(Lawn before)
         {
             var r = new StrokeResult { Striker = Striker };
             var me = Current;
@@ -351,6 +435,29 @@ namespace Croquet.Core
             bool contactFirst = contactStep < firstPointStep;
             bool roquet = liveContact && (contactFirst || Laws.HoopAndRoquetBothCount);
             bool scores = !contactFirst || !liveContact;
+
+            // Challenging Option 11. Roqueting a ball its owner left stuck in
+            // the jaws is a foul: the balls are replaced, nothing the stroke did
+            // counts, the turn is over and the striker's side loses its next one
+            // too. Every ball goes back, not only the two, because nothing the
+            // stroke did is allowed to stand. Caught before anything is scored,
+            // so there is nothing in the rules to undo -- only the lawn.
+            //
+            // Only a ROQUET is a foul. Touching it with a ball already dead on
+            // it, or after running a wicket, is not one, and nor is cannoning it
+            // with another ball.
+            if (roquet && before != null && IsProtected(firstBall))
+            {
+                Restore(before);
+                r.WicketedFoul = firstBall;
+                LosesTurn = SideOf(Striker);
+                ShotsLeft = 0;
+                r.ShotsLeft = 0;
+                EndTurn(r);
+                r.Next = Stroke;
+                r.NextStriker = Striker;
+                return r;
+            }
 
             if (scores)
             {
@@ -418,6 +525,14 @@ namespace Croquet.Core
                 r.BroughtIn.Add(i);
             }
 
+            // A protected ball that has been moved -- cannoned, which is allowed
+            // -- is no longer the ball its owner left in the jaws.
+            if (before != null && Wicketed >= 0 &&
+                (!World.Balls[Wicketed].InPlay ||
+                 World.Balls[Wicketed].Pos.X != before.Pos[Wicketed].X ||
+                 World.Balls[Wicketed].Pos.Y != before.Pos[Wicketed].Y))
+                Wicketed = -1;
+
             // Bonuses do not accumulate: earning any forfeits what was owed.
             ShotsLeft = earned > 0 ? earned : ShotsLeft - 1;
 
@@ -449,11 +564,7 @@ namespace Croquet.Core
 
             if (r.PeggedOut || ShotsLeft <= 0)
             {
-                Stroke = StrokeKind.Ordinary;
-                RoquetedBall = -1;
-                r.TurnEnded = true;
-                CheckWinner();
-                if (Winner == null) NextTurn();
+                EndTurn(r);
             }
             else
             {
@@ -487,12 +598,40 @@ namespace Croquet.Core
             World.Balls[i].Vel = Vec2.Zero;
         }
 
-        void NextTurn()
+        void EndTurn(StrokeResult r)
+        {
+            Stroke = StrokeKind.Ordinary;
+            RoquetedBall = -1;
+            r.TurnEnded = true;
+            CheckWinner();
+            if (Winner != null) return;
+
+            // Option 11: a ball whose turn ends stuck in the jaws is protected
+            // for the next player's turn. Whatever was protected before lapses
+            // here, its one turn having been played.
+            Wicketed = Laws.WicketedBall && World.Balls[Striker].InPlay &&
+                       World.JawsOf(Striker) >= 0
+                     ? Striker : -1;
+
+            NextTurn(r);
+        }
+
+        void NextTurn(StrokeResult r)
         {
             for (int k = 1; k <= States.Length; k++)
             {
                 int j = (Striker + k) % States.Length;
                 if (States[j].Finished) continue;
+
+                // Option 11's penalty: the offending side's next turn is passed
+                // over, once. With four balls that is the offender's partner --
+                // the rulebook's own example has Black's foul cost Blue its turn.
+                if (LosesTurn >= 0 && SideOf(j) == LosesTurn)
+                {
+                    LosesTurn = -1;
+                    r.TurnLost = j;
+                    continue;
+                }
                 Striker = j;
                 ShotsLeft = 1;
                 Stroke = StrokeKind.Ordinary;

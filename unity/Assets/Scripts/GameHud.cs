@@ -51,6 +51,16 @@ public class GameHud : MonoBehaviour
 
     RectTransform over, winner, finalRows;
     Text winnerText;
+
+    RectTransform notice;
+    Text noticeText;
+
+    /// <summary>The shot the notice last spoke about, and when it finished rolling.</summary>
+    Replay told;
+    float toldAt;
+
+    /// <summary>How long a notice stays up.</summary>
+    const float NoticeSeconds = 4f;
     readonly List<Image> finalDots = new List<Image>();
     readonly List<Text> finalScores = new List<Text>();
 
@@ -87,6 +97,7 @@ public class GameHud : MonoBehaviour
         menuButton.Pin(new Vector2(1, 1), new Vector2(-18, -18), new Vector2(96, 36));
         menuButton.colors = Ui.Scheme(Ui.Panel);
 
+        BuildNotice();
         BuildWinner();
     }
 
@@ -346,6 +357,36 @@ public class GameHud : MonoBehaviour
     static int Other(int i, int k) => k < i ? k : k + 1;
 
     /// <summary>
+    /// A line under the top strip for the one kind of event the lawn cannot
+    /// explain by itself: a wicketed-ball foul, where the balls roll and then
+    /// slide back to where they were, and the turn it costs, where a ball's turn
+    /// simply never comes. Without a word both look like the game misbehaving.
+    ///
+    /// Said once the shot has finished rolling, never while it is still moving:
+    /// the rules decided the moment the ball was struck, and saying so early
+    /// gives the ending away.
+    /// </summary>
+    void BuildNotice()
+    {
+        notice = Ui.Rect(canvas.transform, "Notice");
+        notice.anchorMin = notice.anchorMax = new Vector2(0.5f, 1);
+        notice.pivot = new Vector2(0.5f, 1);
+        notice.anchoredPosition = new Vector2(0, -(18 + 20 + 14));   // just under the top strip
+        notice.sizeDelta = new Vector2(600, 0);
+
+        Ui.Skin(notice, Ui.Card);
+        Ui.ColumnOn(notice, 0, new RectOffset(18, 18, 10, 10));
+
+        var fit = notice.gameObject.AddComponent<ContentSizeFitter>();
+        fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        noticeText = Ui.Label(notice, "", 17, Ui.Ink, TextAnchor.MiddleCenter);
+        Ui.Tall(noticeText.gameObject, 44);
+
+        notice.gameObject.SetActive(false);
+    }
+
+    /// <summary>
     /// The end of the game, over the whole screen.
     ///
     /// It was a card floating on the live lawn with the power bar, the deadness
@@ -423,6 +464,8 @@ public class GameHud : MonoBehaviour
         meterRow.gameObject.SetActive(!ended);
         deadPanel.gameObject.SetActive(!ended);
         menuButton.gameObject.SetActive(!ended);
+
+        Notice(ended);
 
         if (ended) { Final(g); return; }
 
@@ -561,6 +604,40 @@ public class GameHud : MonoBehaviour
                 deadChips[i][k].rectTransform.localScale = Vector3.one * swell;
             }
         }
+    }
+
+    /// <summary>Picks up a finished shot that has something to say, and times the notice out.</summary>
+    void Notice(bool ended)
+    {
+        var shot = game.Last;
+        if (shot != null && shot != told && game.Phase != Phase.Rolling)
+        {
+            told = shot;
+            toldAt = Time.time;
+            noticeText.text = Says(shot.Result);
+        }
+
+        bool show = !ended && told != null && noticeText.text.Length > 0 &&
+                    Time.time - toldAt < NoticeSeconds;
+        if (notice.gameObject.activeSelf != show) notice.gameObject.SetActive(show);
+    }
+
+    /// <summary>What a stroke did that the lawn cannot show, or nothing.</summary>
+    string Says(StrokeResult r)
+    {
+        if (r.WicketedFoul >= 0)
+        {
+            string loser = game.Game.Side == null
+                ? CroquetGame.NameOf(r.Striker)
+                : CroquetGame.NameOf(r.Striker) + "'s side";
+            return CroquetGame.NameOf(r.Striker) + " roqueted " + CroquetGame.NameOf(r.WicketedFoul) +
+                   " while it was stuck in the wicket. The balls go back, and " + loser +
+                   " loses its next turn.";
+        }
+
+        if (r.TurnLost >= 0) return CroquetGame.NameOf(r.TurnLost) + " loses its turn.";
+
+        return "";
     }
 
     void Choose(BonusWay way)

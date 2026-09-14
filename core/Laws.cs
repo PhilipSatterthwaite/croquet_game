@@ -55,6 +55,9 @@ namespace Croquet.Core
 
         public OutPenalty OutOfBounds;
 
+        /// <summary>USCA Challenging Option 11. See <see cref="RuleOptions.WicketedBall"/>.</summary>
+        public bool WicketedBall;
+
         public static Laws For(Variant v, RuleOptions options) =>
             v == Variant.SixWicket
                 ? new Laws
@@ -73,7 +76,8 @@ namespace Croquet.Core
                     HoopAndRoquetBothCount = false,
                     FourWaysToTakeCroquet = true,
                     ChooseEitherBall = false,
-                    OutOfBounds = options.OutOfBoundsEndsTurn ? OutPenalty.AnyBall : OutPenalty.None
+                    OutOfBounds = options.OutOfBoundsEndsTurn ? OutPenalty.AnyBall : OutPenalty.None,
+                    WicketedBall = options.WicketedBall
                 };
     }
 }
