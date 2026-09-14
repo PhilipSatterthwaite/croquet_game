@@ -293,6 +293,14 @@ public class CroquetGame : MonoBehaviour
         return Game.States[ball].Dead.Contains(on);
     }
 
+    /// <summary>
+    /// Whether the game is over as far as the screen is concerned: won, and
+    /// the winning shot finished playing. The rules know a game is won the
+    /// moment the stroke is struck, and the end screen used to come up over the
+    /// ball before it had got to the peg.
+    /// </summary>
+    public bool ShownOver => Game != null && Game.Winner != null && Phase == Phase.Over;
+
     /// <summary>Whether a ball is round, as far as the shot on screen has got: it goes when the balls stop.</summary>
     public bool ShownFinished(int ball) =>
         Phase == Phase.Rolling && Last != null && Last.Before != null && ball < Last.Before.Length
@@ -661,7 +669,7 @@ public class CroquetGame : MonoBehaviour
 
         if (moved)
         {
-            if (shot.Result.WicketedFoul >= 0)
+            if (shot.Result.WicketedFoul >= 0 || shot.Result.DeadFoul >= 0)
                 for (float w = 0; w < FoulPause; w += Time.deltaTime * PaceFor(shot.Striker))
                     yield return null;
 
@@ -987,7 +995,7 @@ public class CroquetGame : MonoBehaviour
         var field = Game.World.Field;
         int point = ShownPoint;
 
-        bool show = Game.Winner == null && Phase != Phase.Paused
+        bool show = !ShownOver && Phase != Phase.Paused
                     && !field.IsFinished(point);
         target.gameObject.SetActive(show);
         arrow.gameObject.SetActive(show);
@@ -1062,7 +1070,7 @@ public class CroquetGame : MonoBehaviour
         int n = Mathf.Min(bound.Count, Game.World.Balls.Length);
         if (boundShown.Length < n) boundShown = new bool[n];
 
-        bool live = Game.Winner == null && Phase != Phase.Paused;
+        bool live = !ShownOver && Phase != Phase.Paused;
 
         for (int b = 0; b < n; b++)
         {
@@ -1282,7 +1290,7 @@ public class CroquetGame : MonoBehaviour
         if (i >= signs.Count) return;
         var s = signs[i];
 
-        bool live = on && Game != null && Game.Winner == null && Phase != Phase.Paused;
+        bool live = on && Game != null && !ShownOver && Phase != Phase.Paused;
         int striker = ShownStriker;
         float now = Time.time;
         float d = BallDiameter;

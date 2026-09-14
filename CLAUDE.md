@@ -202,6 +202,21 @@ The ones that bite:
   foot shot, croquet shot, or from where it lies. The second is always an
   ordinary continuation.
 
+### Carry-over deadness (Option 1)
+
+On in `new RuleOptions()` and so in the game. Deadness survives the turn and
+lifts only when the ball clears its next wicket, and the rulebook's same
+paragraph carries the penalty: "If a striker roquets a ball he/she is dead on,
+all balls are replaced to their positions before the shot, and the turn is
+over." `Laws.DeadBallFoul` follows `CarryOverDeadness` for that reason, and
+`StrokeResult.DeadFoul` reports it.
+
+Hitting a dead ball before any wicket is the foul; after a wicket in the same
+stroke the wicket has already lifted the deadness. **The croquet stroke itself
+is exempt**: the first bonus stroke is taken against the ball just roqueted, so
+meeting it is how the send or split is played, not a second roquet of it. Every
+stroke after that may not touch it.
+
 ### Wicketed ball (Option 11)
 
 `RuleOptions.WicketedBall`: on in `new RuleOptions()`, off in `Basic`, and
@@ -971,7 +986,10 @@ What is left is what the lawn genuinely cannot show:
   Balls the rules move after the rolling stops glide there over 0.45 s. That
   covers the replaced balls, and a ball brought back in off the lawn too, which
   used to jump.
-- **The end of the game**, over the whole screen: the court behind a scrim, who
+- **The end of the game**, over the whole screen, once the winning shot has
+  finished playing (`CroquetGame.ShownOver`). The rules know the game is won the
+  moment the stroke is struck, and it used to come up over the ball before the
+  ball reached the peg: the court behind a scrim, who
   won, how far round everybody got, and the way out. The rest of the HUD is
   switched off with it, because there is no stroke left to judge and nobody
   left to be dead on. As a card floating on the live lawn with the power bar

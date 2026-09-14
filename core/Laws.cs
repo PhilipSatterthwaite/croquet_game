@@ -58,6 +58,14 @@ namespace Croquet.Core
         /// <summary>USCA Challenging Option 11. See <see cref="RuleOptions.WicketedBall"/>.</summary>
         public bool WicketedBall;
 
+        /// <summary>
+        /// USCA Challenging Option 1's penalty: "If a striker roquets a ball
+        /// he/she is dead on, all balls are replaced to their positions before
+        /// the shot, and the turn is over." In force wherever carry-over
+        /// deadness is, because the rulebook makes them one option.
+        /// </summary>
+        public bool DeadBallFoul;
+
         public static Laws For(Variant v, RuleOptions options) =>
             v == Variant.SixWicket
                 ? new Laws
@@ -77,7 +85,8 @@ namespace Croquet.Core
                     FourWaysToTakeCroquet = true,
                     ChooseEitherBall = false,
                     OutOfBounds = options.OutOfBoundsEndsTurn ? OutPenalty.AnyBall : OutPenalty.None,
-                    WicketedBall = options.WicketedBall
+                    WicketedBall = options.WicketedBall,
+                    DeadBallFoul = options.CarryOverDeadness
                 };
     }
 }

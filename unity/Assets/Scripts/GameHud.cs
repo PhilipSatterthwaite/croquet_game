@@ -476,7 +476,9 @@ public class GameHud : MonoBehaviour
         // is still being set down.
         if (game.BonusChoice == null) placing = false;
 
-        bool ended = g.Winner != null;
+        // Not the moment the rules know it is won -- that is when the winning
+        // stroke is struck -- but once that stroke has finished playing.
+        bool ended = game.ShownOver;
         over.gameObject.SetActive(ended);
 
         // The rest of the HUD is about the stroke in front of you, and there
@@ -648,6 +650,10 @@ public class GameHud : MonoBehaviour
     /// <summary>What a stroke did that the lawn cannot show, or nothing.</summary>
     string Says(StrokeResult r)
     {
+        if (r.DeadFoul >= 0)
+            return CroquetGame.NameOf(r.Striker) + " hit " + CroquetGame.NameOf(r.DeadFoul) +
+                   ", which it is dead on. The balls go back and the turn is over.";
+
         if (r.WicketedFoul >= 0)
             return CroquetGame.NameOf(r.Striker) + " roqueted " + CroquetGame.NameOf(r.WicketedFoul) +
                    " while it was stuck in the wicket. The balls go back and the turn is over.";

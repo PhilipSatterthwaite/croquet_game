@@ -109,6 +109,13 @@ namespace Croquet.Core
         /// </summary>
         public int WicketedFoul = -1;
 
+        /// <summary>
+        /// The ball this stroke hit while the striker was dead on it, under
+        /// Option 1, or -1. When set, every ball is back where it was before the
+        /// stroke, nothing it did counts, and the turn is over.
+        /// </summary>
+        public int DeadFoul = -1;
+
         /// <summary>Strokes the striker still has after this one.</summary>
         public int ShotsLeft;
 
@@ -353,13 +360,16 @@ namespace Croquet.Core
         }
 
         /// <summary>
-        /// The lawn as it is, kept only while a ball is protected under Option
-        /// 11 -- the one rule that puts balls back after a stroke. Null the rest
-        /// of the time, so a bot's thousands of candidate strokes pay nothing.
+        /// The lawn as it is, kept only when a rule could put the balls back
+        /// after this stroke: a ball protected under Option 11, or a striker
+        /// carrying deadness under Option 1. Null the rest of the time, so a
+        /// bot's thousands of candidate strokes mostly pay nothing.
         /// </summary>
         Lawn Before()
         {
-            if (!Laws.WicketedBall || Wicketed < 0) return null;
+            bool bridged = Laws.WicketedBall && Wicketed >= 0;
+            bool carryingDeadness = Laws.DeadBallFoul && Current.Dead.Count > 0;
+            if (!bridged && !carryingDeadness) return null;
 
             var pos = new Vec2[World.Balls.Length];
             for (int i = 0; i < pos.Length; i++) pos[i] = World.Balls[i].Pos;
@@ -438,12 +448,25 @@ namespace Croquet.Core
             {
                 Restore(before);
                 r.WicketedFoul = firstBall;
-                ShotsLeft = 0;
-                r.ShotsLeft = 0;
-                EndTurn(r);
-                r.Next = Stroke;
-                r.NextStriker = Striker;
-                return r;
+                return Foul(r);
+            }
+
+            // Challenging Option 1: "If a striker roquets a ball he/she is dead
+            // on, all balls are replaced to their positions before the shot, and
+            // the turn is over." Hitting a dead ball before any wicket is that
+            // roquet; after a wicket the wicket has already lifted the deadness.
+            //
+            // The one contact that is not is the croquet stroke's own -- the
+            // send or split. The first bonus stroke is TAKEN against the ball
+            // just roqueted, so meeting it is how the stroke is played, not a
+            // second roquet of it. Every stroke after that may not touch it.
+            bool sending = Stroke == StrokeKind.Bonus && firstBall == RoquetedBall;
+            if (before != null && Laws.DeadBallFoul && firstBall >= 0 && !liveContact &&
+                contactFirst && !sending)
+            {
+                Restore(before);
+                r.DeadFoul = firstBall;
+                return Foul(r);
             }
 
             if (scores)
@@ -583,6 +606,17 @@ namespace Croquet.Core
 
             World.Balls[i].Pos = new Vec2(x, y);
             World.Balls[i].Vel = Vec2.Zero;
+        }
+
+        /// <summary>A foul's ending: the lawn is already put back; the turn is simply over.</summary>
+        StrokeResult Foul(StrokeResult r)
+        {
+            ShotsLeft = 0;
+            r.ShotsLeft = 0;
+            EndTurn(r);
+            r.Next = Stroke;
+            r.NextStriker = Striker;
+            return r;
         }
 
         void EndTurn(StrokeResult r)

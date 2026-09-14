@@ -270,7 +270,7 @@ namespace Croquet.Core
             int at = int.MaxValue;
 
             // A foul put everything back; nothing about deadness happened.
-            if (r.WicketedFoul >= 0) return at;
+            if (r.WicketedFoul >= 0 || r.DeadFoul >= 0) return at;
 
             if (r.Roqueted >= 0)
                 foreach (var e in world.Events)

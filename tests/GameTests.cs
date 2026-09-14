@@ -231,6 +231,8 @@ namespace Croquet.Core.Tests
         [Fact]
         public void Hitting_a_ball_you_are_already_dead_on_earns_nothing_but_costs_nothing()
         {
+            // The basic rule. Under Option 1 it is a foul -- see below.
+            Opts = RuleOptions.Basic;
             var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0) });
             ParkOthers(g, 0, 1);
             g.States[0].Dead.Add(1);
@@ -296,6 +298,60 @@ namespace Croquet.Core.Tests
             g.Play(new Vec2(1, 0), 1.3);
 
             Assert.Empty(g.States[0].Dead);
+        }
+
+        [Fact]
+        public void Under_option_1_hitting_a_ball_you_are_dead_on_puts_the_balls_back_and_ends_the_turn()
+        {
+            // "If a striker roquets a ball he/she is dead on, all balls are
+            // replaced to their positions before the shot, and the turn is over."
+            var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0) });
+            ParkOthers(g, 0, 1);
+            Assert.True(g.Options.CarryOverDeadness);
+            g.States[0].Dead.Add(1);
+            var before = g.World.Balls.Select(b => b.Pos).ToArray();
+
+            var r = g.Play(new Vec2(1, 0), 3.0);
+
+            Assert.Equal(1, r.DeadFoul);
+            Assert.True(r.TurnEnded);
+            Assert.Equal(1, g.Striker);
+            for (int i = 0; i < before.Length; i++) Assert.Equal(before[i], g.World.Balls[i].Pos);
+        }
+
+        [Fact]
+        public void Under_option_1_the_croquet_stroke_itself_is_no_foul()
+        {
+            // The send or split is taken against the ball just roqueted, so
+            // meeting it is how the stroke is played, not a roquet of a dead ball.
+            var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0) });
+            ParkOthers(g, 0, 1);
+
+            g.Play(new Vec2(1, 0), 3.0);                                    // roquet
+            Assert.False(g.IsAlive(1));
+
+            var r = g.PlayBonus(BonusWay.CroquetShot, new Vec2(-1, 0), new Vec2(1, 0), 2.0);
+
+            Assert.Equal(-1, r.DeadFoul);
+            Assert.False(r.TurnEnded);
+            Assert.Equal(1, r.ShotsLeft);                                   // the continuation
+        }
+
+        [Fact]
+        public void Under_option_1_the_continuation_may_not_hit_the_ball_just_croqueted()
+        {
+            var g = NewGame(at: new[] { (5.0, 7.0), (7.0, 7.0) });
+            ParkOthers(g, 0, 1);
+
+            g.Play(new Vec2(1, 0), 3.0);                                            // roquet
+            g.PlayBonus(BonusWay.WhereItLies, Vec2.Zero, new Vec2(0, 1), 0.3);      // a quiet stroke
+
+            var before = g.World.Balls.Select(b => b.Pos).ToArray();
+            var r = g.Play(g.World.Balls[1].Pos - g.World.Balls[0].Pos, 3.0);       // straight at it
+
+            Assert.Equal(1, r.DeadFoul);
+            Assert.True(r.TurnEnded);
+            for (int i = 0; i < before.Length; i++) Assert.Equal(before[i], g.World.Balls[i].Pos);
         }
 
         [Fact]

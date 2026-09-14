@@ -297,6 +297,7 @@ IResult PlayMove(PlayRequest r, string note, double score)
         shotsLeft = result.ShotsLeft,
         endedByOutOfBounds = result.EndedByOutOfBounds,
         wicketedFoul = result.WicketedFoul,
+        deadFoul = result.DeadFoul,
         turnEnded = result.TurnEnded,
         by = striker,
         note,
