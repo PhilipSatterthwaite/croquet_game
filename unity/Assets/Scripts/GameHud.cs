@@ -358,9 +358,9 @@ public class GameHud : MonoBehaviour
 
     /// <summary>
     /// A line under the top strip for the one kind of event the lawn cannot
-    /// explain by itself: a wicketed-ball foul, where the balls roll and then
-    /// slide back to where they were, and the turn it costs, where a ball's turn
-    /// simply never comes. Without a word both look like the game misbehaving.
+    /// explain by itself: a wicketed-ball foul, where the balls roll, slide
+    /// back to where they were, and the turn passes. Without a word that looks
+    /// like the game misbehaving.
     ///
     /// Said once the shot has finished rolling, never while it is still moving:
     /// the rules decided the moment the ball was struck, and saying so early
@@ -626,16 +626,8 @@ public class GameHud : MonoBehaviour
     string Says(StrokeResult r)
     {
         if (r.WicketedFoul >= 0)
-        {
-            string loser = game.Game.Side == null
-                ? CroquetGame.NameOf(r.Striker)
-                : CroquetGame.NameOf(r.Striker) + "'s side";
             return CroquetGame.NameOf(r.Striker) + " roqueted " + CroquetGame.NameOf(r.WicketedFoul) +
-                   " while it was stuck in the wicket. The balls go back, and " + loser +
-                   " loses its next turn.";
-        }
-
-        if (r.TurnLost >= 0) return CroquetGame.NameOf(r.TurnLost) + " loses its turn.";
+                   " while it was stuck in the wicket. The balls go back and the turn is over.";
 
         return "";
     }

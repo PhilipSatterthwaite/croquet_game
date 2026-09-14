@@ -11,9 +11,10 @@ namespace Croquet.Core.Tests
     ///   wicket), the next player may not roquet the wicketed ball. If the
     ///   opponent's ball roquets a wicketed ball, the balls are replaced and the
     ///   opponents lose their next turn. The striker may cannon the wicketed
-    ///   ball with another ball without penalty. Example: if Red is wicketed and
-    ///   then Black roquets Red, Red and Black are replaced, and then Yellow
-    ///   plays, Blue loses its turn, and then Red plays.
+    ///   ball with another ball without penalty.
+    ///
+    /// Played here WITHOUT the lost turn, by choice: the balls are replaced and
+    /// the turn ends, and play carries on in the ordinary order.
     ///
     /// Red is put in the jaws the way <see cref="WicketTests"/> does it -- tapped
     /// in from just short of wicket 1 -- so it is left there by its own stroke,
@@ -42,13 +43,13 @@ namespace Croquet.Core.Tests
         }
 
         /// <summary>Every ball on the lawn, parked along the top edge clear of everything.</summary>
-        static Game NewGame(int balls, int[] side, RuleOptions options)
+        static Game NewGame(RuleOptions options)
         {
-            var arr = new Ball[balls];
-            for (int i = 0; i < balls; i++) arr[i] = new Ball(Vec2.Zero);
+            var arr = new Ball[4];
+            for (int i = 0; i < 4; i++) arr[i] = new Ball(Vec2.Zero);
 
-            var g = new Game(new World(arr, Field.NineWicket(), Lawn()), side, options);
-            for (int i = 0; i < balls; i++)
+            var g = new Game(new World(arr, Field.NineWicket(), Lawn()), Sides, options);
+            for (int i = 0; i < 4; i++)
             {
                 g.States[i].Started = true;
                 g.World.Balls[i].InPlay = true;
@@ -91,9 +92,9 @@ namespace Croquet.Core.Tests
         }
 
         [Fact]
-        public void The_rulebooks_example_Black_roquets_wicketed_Red_and_Blue_loses_its_turn()
+        public void Roqueting_a_wicketed_ball_puts_the_balls_back_and_ends_the_turn()
         {
-            var g = NewGame(4, Sides, Option(true));
+            var g = NewGame(Option(true));
             var h = RedStuckInTheJaws(g);
 
             Assert.Equal(1, g.Wicketed);
@@ -105,33 +106,29 @@ namespace Croquet.Core.Tests
 
             var r = g.Play(new Vec2(1, 0), 2.0);
 
-            // Red and Black are replaced...
+            // The balls are replaced...
             Assert.Equal(1, r.WicketedFoul);
             for (int i = 0; i < 4; i++) Assert.Equal(before[i], g.World.Balls[i].Pos);
 
-            // ...and nothing the stroke did counts: no roquet, no deadness, and
-            // Red was not scored through the wicket it was knocked out of.
+            // ...nothing the stroke did counts: no roquet, no deadness, and Red
+            // was not scored through the wicket it was knocked out of...
             Assert.Equal(-1, r.Roqueted);
             Assert.Empty(g.States[2].Dead);
             Assert.Empty(r.OthersScored);
             Assert.Equal(0, g.States[1].Point);
+
+            // ...and the turn is over, with nobody's next turn taken away.
             Assert.True(r.TurnEnded);
             Assert.Equal(0, r.ShotsLeft);
-
-            // ...and then Yellow plays, Blue loses its turn, and then Red plays.
-            Assert.Equal(3, g.Striker);
-            Assert.Equal(0, g.LosesTurn);
-
-            var yellow = Pass(g);
-            Assert.Equal(0, yellow.TurnLost);
-            Assert.Equal(1, g.Striker);
-            Assert.Equal(-1, g.LosesTurn);
+            Assert.Equal(3, g.Striker);       // Yellow
+            Pass(g);
+            Assert.Equal(0, g.Striker);       // Blue, as ever
         }
 
         [Fact]
         public void Cannoning_a_wicketed_ball_with_another_ball_is_no_foul()
         {
-            var g = NewGame(4, Sides, Option(true));
+            var g = NewGame(Option(true));
             var h = RedStuckInTheJaws(g);
             var redAt = g.World.Balls[1].Pos;
 
@@ -143,7 +140,6 @@ namespace Croquet.Core.Tests
             Assert.Equal(3, r.Roqueted);
             Assert.Equal(-1, r.WicketedFoul);
             Assert.False(r.TurnEnded);
-            Assert.Equal(-1, g.LosesTurn);
 
             // Red was knocked, so it is no longer the ball its owner left there.
             Assert.NotEqual(redAt, g.World.Balls[1].Pos);
@@ -153,7 +149,7 @@ namespace Croquet.Core.Tests
         [Fact]
         public void The_protection_lasts_only_for_the_next_players_turn()
         {
-            var g = NewGame(4, Sides, Option(true));
+            var g = NewGame(Option(true));
             var h = RedStuckInTheJaws(g);
 
             Pass(g);                          // Black leaves it alone
@@ -171,7 +167,7 @@ namespace Croquet.Core.Tests
         [Fact]
         public void Without_the_option_a_wicketed_ball_is_an_ordinary_roquet()
         {
-            var g = NewGame(4, Sides, Option(false));
+            var g = NewGame(Option(false));
             var h = RedStuckInTheJaws(g);
 
             Assert.Equal(-1, g.Wicketed);
@@ -183,47 +179,23 @@ namespace Croquet.Core.Tests
         }
 
         [Fact]
-        public void Every_ball_for_itself_the_offender_loses_its_own_next_turn()
+        public void A_clone_carries_the_protection()
         {
-            var g = NewGame(3, null, Option(true));
+            var g = NewGame(Option(true));
             var h = RedStuckInTheJaws(g);
 
-            var r = RoquetRed(g, h);
-            Assert.Equal(1, r.WicketedFoul);
-            Assert.Equal(2, g.LosesTurn);
-            Assert.Equal(0, g.Striker);
+            var copy = g.Clone();
+            Assert.Equal(1, copy.Wicketed);
+            Assert.Equal(Checksum.Of(g), Checksum.Of(copy));
 
-            Assert.Equal(-1, Pass(g).TurnLost);   // Blue plays
-            Assert.Equal(1, g.Striker);
-
-            Assert.Equal(2, Pass(g).TurnLost);    // Red plays; Black's turn is passed over
-            Assert.Equal(0, g.Striker);
-        }
-
-        [Fact]
-        public void A_clone_carries_the_protection_and_the_lost_turn()
-        {
-            var g = NewGame(4, Sides, Option(true));
-            var h = RedStuckInTheJaws(g);
-
-            var protectedCopy = g.Clone();
-            Assert.Equal(1, protectedCopy.Wicketed);
-            Assert.Equal(Checksum.Of(g), Checksum.Of(protectedCopy));
-
-            RoquetRed(g, h);
-
-            var owing = g.Clone();
-            Assert.Equal(0, owing.LosesTurn);
-            Assert.Equal(Checksum.Of(g), Checksum.Of(owing));
-
-            Assert.Equal(0, Pass(owing).TurnLost);
-            Assert.Equal(1, owing.Striker);
+            // And the copy enforces it, not merely remembers it.
+            Assert.Equal(1, RoquetRed(copy, h).WicketedFoul);
         }
 
         [Fact]
         public void The_bot_does_not_aim_at_a_protected_ball()
         {
-            var g = NewGame(4, Sides, Option(true));
+            var g = NewGame(Option(true));
             RedStuckInTheJaws(g);
 
             Assert.True(g.IsProtected(1));

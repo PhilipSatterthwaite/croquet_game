@@ -995,7 +995,22 @@ public static class Shapes
     /// </summary>
     static readonly Vector2 Half = new Vector2(0.5f, 0.5f);
 
-    static Texture2D New(int w, int h, bool repeat = false) => new Texture2D(w, h)
+    /// <summary>
+    /// A texture for a sprite, with its mip chain STOPPED at 16 texels.
+    ///
+    /// A full-rectangle sprite has no outline but its own alpha, so the alpha
+    /// has to stay round at every size it is drawn at, and a mip chain does not
+    /// keep it round. Box-filtered down, a disc's corners are still fully clear
+    /// at 8x8, 32% opaque at 4x4, and at 2x2 every texel is the same 79% -- a
+    /// plain square. A peg on the whole-court view is about six pixels across,
+    /// which is exactly where those levels get sampled, so zooming out turned
+    /// the pegs into squares. Ending the chain at 16 keeps every level round; a
+    /// sprite smaller than that on screen samples the 16 and stays a circle.
+    ///
+    /// The grass tile keeps its whole chain: it repeats, so it has no edge to lose.
+    /// </summary>
+    static Texture2D New(int w, int h, bool repeat = false) =>
+        new Texture2D(w, h, TextureFormat.RGBA32, Levels(w, h, repeat ? 1 : 16), false)
     {
         // Trilinear, so a sprite shrinking through the zoom blends between
         // mip levels rather than stepping from one to the next -- which reads
@@ -1008,6 +1023,14 @@ public static class Shapes
         wrapMode = repeat ? TextureWrapMode.Repeat : TextureWrapMode.Clamp,
         hideFlags = HideFlags.DontSave
     };
+
+    /// <summary>Mip levels from full size down to the last one no smaller than <paramref name="smallest"/>.</summary>
+    static int Levels(int w, int h, int smallest)
+    {
+        int n = 1;
+        for (int s = Mathf.Min(w, h); s / 2 >= smallest; s /= 2) n++;
+        return n;
+    }
 
     /// <summary>
     /// A disc, or an annulus if an inner radius is given. Drawn at a good size

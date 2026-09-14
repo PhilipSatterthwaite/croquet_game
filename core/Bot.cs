@@ -1114,10 +1114,6 @@ namespace Croquet.Core
             if (r.TurnEnded) s -= k.TurnEnded;
             if (r.EndedByOutOfBounds) s -= k.WentOut;   // and it was avoidable
 
-            // A wicketed-ball foul throws away the side's next turn as well as
-            // this one.
-            if (r.WicketedFoul >= 0) s -= k.TurnEnded;
-
             if (!after.World.Balls[me].InPlay) return s;   // round; nothing else matters
 
             var pos = after.World.Balls[me].Pos;

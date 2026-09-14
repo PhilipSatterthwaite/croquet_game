@@ -105,16 +105,9 @@ namespace Croquet.Core
         /// <summary>
         /// The wicketed ball this stroke roqueted against Option 11, or -1. When
         /// set, every ball is back where it was before the stroke, nothing it
-        /// did counts, the turn is over, and the striker's side has lost its
-        /// next turn.
+        /// did counts, and the turn is over.
         /// </summary>
         public int WicketedFoul = -1;
-
-        /// <summary>
-        /// A ball whose turn was passed over when this stroke ended the turn,
-        /// because its side had lost it to a wicketed-ball foul, or -1.
-        /// </summary>
-        public int TurnLost = -1;
 
         /// <summary>Strokes the striker still has after this one.</summary>
         public int ShotsLeft;
@@ -169,12 +162,6 @@ namespace Croquet.Core
         /// about inside them, is no longer the one its owner left there.
         /// </summary>
         public int Wicketed { get; private set; } = -1;
-
-        /// <summary>
-        /// The side that roqueted a protected ball and has lost its next turn,
-        /// or -1. Playing every ball for itself, the side is the ball.
-        /// </summary>
-        public int LosesTurn { get; private set; } = -1;
 
         /// <summary>The side a ball is on; with no sides, each ball is its own.</summary>
         public int SideOf(int ball) => Side == null ? ball : Side[ball];
@@ -234,8 +221,7 @@ namespace Croquet.Core
                 RoquetedBall = RoquetedBall,
                 ShotsLeft = ShotsLeft,
                 Winner = Winner,
-                Wicketed = Wicketed,
-                LosesTurn = LosesTurn
+                Wicketed = Wicketed
             };
             World.Balls.CopyTo(g.World.Balls, 0);
 
@@ -438,8 +424,10 @@ namespace Croquet.Core
 
             // Challenging Option 11. Roqueting a ball its owner left stuck in
             // the jaws is a foul: the balls are replaced, nothing the stroke did
-            // counts, the turn is over and the striker's side loses its next one
-            // too. Every ball goes back, not only the two, because nothing the
+            // counts, and the turn is over. The rulebook also takes the offending
+            // side's next turn; this game leaves that out on purpose, and play
+            // carries on in the ordinary order. Every ball goes back, not only
+            // the two, because nothing the
             // stroke did is allowed to stand. Caught before anything is scored,
             // so there is nothing in the rules to undo -- only the lawn.
             //
@@ -450,7 +438,6 @@ namespace Croquet.Core
             {
                 Restore(before);
                 r.WicketedFoul = firstBall;
-                LosesTurn = SideOf(Striker);
                 ShotsLeft = 0;
                 r.ShotsLeft = 0;
                 EndTurn(r);
@@ -613,25 +600,15 @@ namespace Croquet.Core
                        World.JawsOf(Striker) >= 0
                      ? Striker : -1;
 
-            NextTurn(r);
+            NextTurn();
         }
 
-        void NextTurn(StrokeResult r)
+        void NextTurn()
         {
             for (int k = 1; k <= States.Length; k++)
             {
                 int j = (Striker + k) % States.Length;
                 if (States[j].Finished) continue;
-
-                // Option 11's penalty: the offending side's next turn is passed
-                // over, once. With four balls that is the offender's partner --
-                // the rulebook's own example has Black's foul cost Blue its turn.
-                if (LosesTurn >= 0 && SideOf(j) == LosesTurn)
-                {
-                    LosesTurn = -1;
-                    r.TurnLost = j;
-                    continue;
-                }
                 Striker = j;
                 ShotsLeft = 1;
                 Stroke = StrokeKind.Ordinary;

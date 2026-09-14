@@ -32,10 +32,13 @@ namespace Croquet.Core
         /// <summary>
         /// Option 11, "wicketed ball". A striker whose turn ends with its ball
         /// stuck in the jaws of a wicket is protected for the next player's
-        /// turn: an opponent who roquets it has both balls replaced, the turn
-        /// ends, and that opponent's side loses its next turn. Cannoning it --
-        /// another ball knocking it -- carries no penalty, and neither does
-        /// touching it with a stroke that was not a roquet.
+        /// turn: an opponent who roquets it has the balls replaced and the turn
+        /// ends. Cannoning it -- another ball knocking it -- carries no penalty,
+        /// and neither does touching it with a stroke that was not a roquet.
+        ///
+        /// The rulebook also takes the offending side's next turn. This game
+        /// leaves that out on purpose: the balls going back and the turn ending
+        /// is the whole penalty.
         ///
         /// Nine-wicket only; association croquet has no such law.
         /// </summary>

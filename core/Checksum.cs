@@ -45,14 +45,13 @@ namespace Croquet.Core
             if (game.Winner != null)
                 foreach (var w in game.Winner) h = Mix(h, (ulong)w);
 
-            // Option 11's protection and the turn it has cost. Mixed only while
-            // either is set, so a game that never uses the option hashes exactly
-            // as it did before the option existed -- Reference.Hash included.
-            if (game.Wicketed >= 0 || game.LosesTurn >= 0)
+            // Option 11's protection. Mixed only while it is set, so a game that
+            // never uses the option hashes exactly as it did before the option
+            // existed -- Reference.Hash included.
+            if (game.Wicketed >= 0)
             {
                 h = Mix(h, 0xB0B0UL);
-                h = Mix(h, unchecked((ulong)(long)game.Wicketed));
-                h = Mix(h, unchecked((ulong)(long)game.LosesTurn));
+                h = Mix(h, (ulong)game.Wicketed);
             }
 
             var world = game.World;

@@ -220,14 +220,14 @@ decision:
 - **The balls are replaced**, every one of them with its jaws state, because
   nothing the stroke did is allowed to stand. The foul is caught before anything
   is scored, so there is nothing in the rules to undo, only the lawn.
-- **The opponents lose their next turn**: the offending *side's* next turn,
-  which with four balls is the partner's. The rulebook's example (Black roquets
-  wicketed Red, Yellow plays, Blue loses its turn, then Red plays) is in
-  `WicketedBallTests` word for word. With every ball for itself, the offender
-  loses its own next turn.
+- **No lost turn, and that is a deliberate house change.** The rulebook also
+  has the opponents lose their next turn (its example: Black roquets wicketed
+  Red, Yellow plays, Blue loses its turn, then Red plays). This game leaves that
+  out by choice: the balls go back, the turn ends, and play carries on in the
+  ordinary order.
 
-`StrokeResult.WicketedFoul` and `TurnLost` report it. The bot does not aim at a
-protected ball, and scores a foul as a second lost turn. The lawn is only
+`StrokeResult.WicketedFoul` reports it. The bot does not aim at a protected
+ball. The lawn is only
 snapshotted while a ball is protected, so a search pays nothing for the rule.
 `Checksum` mixes the new state only while it is set, which keeps
 `Reference.Hash` where it was.
@@ -956,9 +956,9 @@ What is left is what the lawn genuinely cannot show:
   to mean the stroke is getting harder — and how long the machine is taking is
   not something anyone waits to read off a scale.
 - **A notice for a wicketed-ball foul**, under the top strip, once the shot
-  has stopped. The balls roll, pause, and slide back to where they were, and a
-  ball's turn is later passed over. Without a word, both look like the game
-  misbehaving. It also says when a turn is lost, and it goes after four seconds.
+  has stopped. The balls roll, pause, and slide back to where they were, and the
+  turn passes; without a word that looks like the game misbehaving. It goes after
+  four seconds.
   Balls the rules move after the rolling stops glide there over 0.45 s. That
   covers the replaced balls, and a ball brought back in off the lawn too, which
   used to jump.
@@ -1055,6 +1055,16 @@ the edge. Textures filter trilinearly too, so the edge does not step as the zoom
 changes. A ball seven pixels across is still only a few pixels of circle: this
 removes the faceting, not the resolution, and a bigger `minBallPixels` or
 `minFurniturePixels` is the lever for that.
+
+**A full rectangle needs its mip chain cut short, or small things go square.**
+With no outline mesh, the alpha is the only thing keeping a sprite round, and a
+box-filtered mip chain does not keep it round: a disc's corners are still clear
+at 8×8, 32% opaque at 4×4, and at 2×2 every texel is the same 79%, which is a
+square. A peg on the whole-court view is about six pixels across, which is
+exactly where those levels are sampled, so zooming out turned the pegs into
+squares that the tight mesh had been quietly clipping round. `Shapes.New` stops
+the chain at 16 texels; the grass tile keeps its whole chain because it repeats
+and has no edge.
 
 **A line needs a line sprite, not a white pixel.** `Shapes.Solid` stretched
 into a thin rotated quad has hard edges with nothing anti-aliasing them, and a
