@@ -193,6 +193,21 @@ namespace Croquet.Core.Tests
         }
 
         [Fact]
+        public void A_replay_remembers_the_bridged_ball_after_the_turn_moves_on()
+        {
+            // The badge on a bridged ball must not vanish the moment the next
+            // player strikes: ending that stroke's turn has already moved on.
+            var g = NewGame(Option(true));
+            RedStuckInTheJaws(g);
+
+            var r = Replay.Play(g, new Vec2(-1, 0), 0.3);   // Black passes
+
+            Assert.True(r.Result.TurnEnded);
+            Assert.Equal(-1, g.Wicketed);
+            Assert.Equal(1, r.WicketedBefore);
+        }
+
+        [Fact]
         public void The_bot_does_not_aim_at_a_protected_ball()
         {
             var g = NewGame(Option(true));

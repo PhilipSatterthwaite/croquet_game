@@ -220,6 +220,9 @@ public class CroquetGame : MonoBehaviour
     /// <summary>An arrow over the hoop each ball is playing for, and a dark rim behind it.</summary>
     readonly List<SpriteRenderer> bound = new List<SpriteRenderer>();
     readonly List<SpriteRenderer> boundRim = new List<SpriteRenderer>();
+
+    /// <summary>Per ball, per badge kind: rim, disc and glyph. See <see cref="ShowBadges"/>.</summary>
+    readonly List<SpriteRenderer[]> badges = new List<SpriteRenderer[]>();
     bool[] boundShown = new bool[0];
 
     readonly Dictionary<Hand, Bot> bots = new Dictionary<Hand, Bot>();
@@ -848,12 +851,15 @@ public class CroquetGame : MonoBehaviour
         foreach (var g in glints) if (g != null) Destroy(g.gameObject);
         foreach (var b in bound) if (b != null) Destroy(b.gameObject);
         foreach (var b in boundRim) if (b != null) Destroy(b.gameObject);
+        foreach (var set in badges)
+            foreach (var p in set) if (p != null) Destroy(p.gameObject);
         discs.Clear();
         rims.Clear();
         seats.Clear();
         glints.Clear();
         bound.Clear();
         boundRim.Clear();
+        badges.Clear();
 
         for (int i = 0; i < count; i++)
         {
@@ -882,6 +888,18 @@ public class CroquetGame : MonoBehaviour
                                       new Color(0, 0, 0, 0.45f), Layer.BoundRim));
             bound.Add(Shapes.Piece(root, "Ball " + i + " bound", Shapes.Triangle,
                                    Marked(ColourOf(i)), Layer.Bound));
+
+            var set = new SpriteRenderer[BadgeKinds * 3];
+            for (int k = 0; k < BadgeKinds; k++)
+            {
+                set[k * 3] = Shapes.Piece(root, "Ball " + i + " badge rim", Shapes.Disc,
+                                          new Color(1, 1, 1, 0.92f), Layer.BadgeRim);
+                set[k * 3 + 1] = Shapes.Piece(root, "Ball " + i + " badge", Shapes.Disc,
+                                              BadgeBack, Layer.Badge);
+                set[k * 3 + 2] = Shapes.Piece(root, "Ball " + i + " badge glyph", GlyphFor(k),
+                                              GlyphPaint(k), Layer.BadgeGlyph);
+            }
+            badges.Add(set);
         }
 
         if (marker == null)
@@ -1125,6 +1143,9 @@ public class CroquetGame : MonoBehaviour
     void Place(int i, Vector2 at, bool force = false, float fade = 1f)
     {
         bool on = force || Game.World.Balls[i].InPlay;
+
+        // Badges follow the ball as drawn, and go the moment it starts to sink.
+        ShowBadges(i, at, on && fade >= 0.999f);
         discs[i].gameObject.SetActive(on);
         rims[i].gameObject.SetActive(on);
         seats[i].gameObject.SetActive(on);
@@ -1192,6 +1213,96 @@ public class CroquetGame : MonoBehaviour
         float d = BallDiameter * 2.4f;
         marker.Put(at.x, at.y, d, d);
         marker.color = new Color(1, 1, 1, WaitingForYou ? 0.95f : 0.45f);
+    }
+
+    // ---- badges -----------------------------------------------------------
+
+    /// <summary>Dead on, rover, bridged: the order they sit in, left to right.</summary>
+    const int BadgeKinds = 3;
+
+    /// <summary>
+    /// A badge's size as a share of the ball AS DRAWN, and how far up and right
+    /// of the ball's centre the first sits, in the same share. Against the drawn
+    /// ball rather than in metres, so they stay tucked against it when the pixel
+    /// floor is making the ball bigger than life.
+    /// </summary>
+    const float BadgeShare = 0.6f, BadgeReach = 0.45f;
+
+    static readonly Color BadgeBack = new Color(0.07f, 0.08f, 0.07f, 0.92f);
+    static readonly Color RoverGold = new Color(1f, 0.80f, 0.22f, 1f);
+
+    static Sprite GlyphFor(int kind) =>
+        kind == 0 ? Shapes.Cross : kind == 1 ? Shapes.Star : Shapes.Arch;
+
+    static Color GlyphPaint(int kind) => kind == 1 ? RoverGold : Color.white;
+
+    /// <summary>
+    /// The small round badges tucked at a ball's top-right: a white cross on a
+    /// ball the striker is dead on, a gold star on a rover, a white wicket on a
+    /// bridged ball. One per state, side by side, packed from the ball outward
+    /// in that order, so a ball with one badge always has it in the same place.
+    ///
+    /// Each is a dark disc on a thin white rim: dark so a white glyph reads on
+    /// any lawn and any ball, the rim so the black ball's badge does not vanish
+    /// into the ball. True colours only, and nothing covering the ball.
+    ///
+    /// They read the SHOWN state -- what the shot on screen has got to, as the
+    /// deadness chart does -- so none of them changes while the stroke that
+    /// changes it is still rolling.
+    /// </summary>
+    void ShowBadges(int i, Vector2 at, bool on)
+    {
+        if (i >= badges.Count) return;
+        var set = badges[i];
+
+        bool live = on && Game != null && Game.Winner == null && Phase != Phase.Paused;
+        int striker = ShownStriker;
+
+        float d = BallDiameter;
+        float size = d * BadgeShare;
+        var first = at + new Vector2(d * BadgeReach, d * BadgeReach);
+
+        int slot = 0;
+        for (int k = 0; k < BadgeKinds; k++)
+        {
+            bool show = live && (k == 0 ? i != striker && ShownDead(striker, i)
+                               : k == 1 ? ShownRover(i)
+                               : ShownBridged(i));
+
+            for (int p = 0; p < 3; p++) set[k * 3 + p].gameObject.SetActive(show);
+            if (!show) continue;
+
+            var c = first + new Vector2(slot * size * 1.12f, 0);
+            set[k * 3].Put(c.x, c.y, size * 1.2f, size * 1.2f);
+            set[k * 3 + 1].Put(c.x, c.y, size, size);
+            set[k * 3 + 2].Put(c.x, c.y, size * 0.72f, size * 0.72f);
+            slot++;
+        }
+    }
+
+    /// <summary>
+    /// Whether a ball is a rover -- every wicket run, only the finishing stake
+    /// left -- as far as the shot on screen has got.
+    /// </summary>
+    public bool ShownRover(int ball)
+    {
+        if (Game == null) return false;
+        var s = Phase == Phase.Rolling && Last != null && Last.Before != null && ball < Last.Before.Length
+            ? Last.Before[ball]
+            : Game.States[ball];
+        return !s.Finished && s.Point == s.Total - 1;
+    }
+
+    /// <summary>
+    /// Whether a ball is bridged: stuck in the jaws and protected by Option 11
+    /// from the player to move, as far as the shot on screen has got.
+    /// </summary>
+    public bool ShownBridged(int ball)
+    {
+        if (Game == null || !Game.Laws.WicketedBall) return false;
+        if (Phase == Phase.Rolling && Last != null)
+            return ball == Last.WicketedBefore && Game.SideOf(ball) != Game.SideOf(Last.Striker);
+        return Game.IsProtected(ball);
     }
 
     public static Vector2 ToVector(Vec2 v) => new Vector2((float)v.X, (float)v.Y);

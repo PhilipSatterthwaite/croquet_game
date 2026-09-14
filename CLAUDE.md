@@ -1252,6 +1252,19 @@ frame and everyone else's when the balls stop; `ShownFinished` holds a
 pegged-out ball's row until then too. `ReplayTests` holds the frame to the
 contact and to the clearance.
 
+**Badges say what a ball is, beside the ball.** Small round badges tucked at a
+ball's top-right, one per state and side by side when a ball has several, each a
+dark disc on a thin white rim with a glyph: a white cross on a ball the striker
+is dead on, a gold star on a rover (every wicket run, only the finishing stake
+left), and a white wicket on a bridged ball, the one stuck in the jaws that
+Option 11 protects from the player to move. They are sized against the ball as
+drawn, so they stay tucked against it at any zoom, and they read the same
+held-back state as the chart (`ShownDead`, `ShownRover`, `ShownBridged`), so none
+of them changes while the shot that changes it is still rolling.
+`Replay.WicketedBefore` is what makes that possible for the bridge: ending a turn
+works the protection out afresh, so the Game has forgotten it by the time the
+next player's ball is moving.
+
 **The ring says which hoop; a small triangle says which way.** The course runs
 most hoops both ways at different stages, so a ring alone leaves unsaid the half
 that decides where to stand. The triangle sits inside the ring on the NEAR side,

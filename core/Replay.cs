@@ -96,12 +96,19 @@ namespace Croquet.Core
         /// </summary>
         public readonly int DeadnessFrame;
 
+        /// <summary>
+        /// The ball Option 11 was protecting when the stroke was struck, or -1.
+        /// Ending a turn works it out afresh, so by the time the next player's
+        /// ball is rolling the Game has already forgotten it.
+        /// </summary>
+        public readonly int WicketedBefore;
+
         public int FrameCount => Frames.Count;
         public double Seconds => (Frames.Count - 1) / (double)FramesPerSecond;
 
         Replay(StrokeResult result, IReadOnlyList<Vec2[]> frames, int striker, int pointBefore,
                int struck, Vec2 from, StrokeKind kind, Vec2 aim, double power,
-               BallState[] before, int deadnessFrame)
+               BallState[] before, int deadnessFrame, int wicketedBefore)
         {
             Result = result;
             Frames = frames;
@@ -114,6 +121,7 @@ namespace Croquet.Core
             Power = power;
             Before = before;
             DeadnessFrame = deadnessFrame;
+            WicketedBefore = wicketedBefore;
         }
 
         /// <summary>Where every ball comes to rest in the animation.</summary>
@@ -166,6 +174,7 @@ namespace Croquet.Core
                 wasInPlay[i] = world.Balls[i].InPlay;
             }
 
+            int wicketed = game.Wicketed;
             var states = new BallState[game.States.Length];
             for (int i = 0; i < states.Length; i++) states[i] = game.States[i].Clone();
 
@@ -203,7 +212,7 @@ namespace Croquet.Core
             int deadness = FrameOf(steps, DeadnessStep(world, striker, result));
 
             return new Replay(result, frames, striker, pointBefore, struck, before[struck],
-                              kind, aim, power, states, deadness);
+                              kind, aim, power, states, deadness, wicketed);
         }
 
         /// <summary>

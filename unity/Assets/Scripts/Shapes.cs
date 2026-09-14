@@ -44,13 +44,19 @@ public static class Layer
     // What every OTHER ball is playing for, floating over its hoop. Above the
     // balls, because a ball parked in front of a hoop must not hide the hint
     // saying who else wants it.
-    public const int BoundRim = 12;
-    public const int Bound = 13;
+    // The badges tucked against a ball -- dead on, rover, bridged. Above the
+    // ball they describe, and under everything about the stroke being aimed.
+    public const int BadgeRim = 12;
+    public const int Badge = 13;
+    public const int BadgeGlyph = 14;
 
-    public const int Striker = 14;
-    public const int AimRing = 15;
-    public const int AimLine = 16;
-    public const int Mallet = 17;
+    public const int BoundRim = 15;
+    public const int Bound = 16;
+
+    public const int Striker = 17;
+    public const int AimRing = 18;
+    public const int AimLine = 19;
+    public const int Mallet = 20;
 
     /// <summary>
     /// How far towards the camera everything above the turf is lifted, in
@@ -63,7 +69,7 @@ public static class Layer
 public static class Shapes
 {
     static Sprite solid, disc, ring, sphere, cylinder, wood, shadow, gloss, rounded;
-    static Sprite chevron, fade, line, dashes, gust, grass, triangle;
+    static Sprite chevron, fade, line, dashes, gust, grass, triangle, cross, star, arch;
     static Material flat;
 
     /// <summary>
@@ -819,6 +825,103 @@ public static class Shapes
                 return Vector2.Dot(p - a, new Vector2(-ab.y, ab.x).normalized);
             }
         }
+    }
+
+    /// <summary>A white cross, one unit across: the badge on a ball the striker is dead on.</summary>
+    public static Sprite Cross
+    {
+        get
+        {
+            if (Spent(cross))
+                cross = Glyph("Cross", p =>
+                    GlyphSegment(p, new Vector2(0.26f, 0.26f), new Vector2(0.74f, 0.74f)) < 0.085f ||
+                    GlyphSegment(p, new Vector2(0.26f, 0.74f), new Vector2(0.74f, 0.26f)) < 0.085f);
+            return cross;
+        }
+    }
+
+    /// <summary>A five-pointed star, one unit across: the badge on a rover.</summary>
+    public static Sprite Star
+    {
+        get
+        {
+            if (Spent(star))
+            {
+                // Sat a touch low, so the points and the notches between the
+                // two lower arms balance about the middle of the badge.
+                var points = new Vector2[10];
+                for (int k = 0; k < 10; k++)
+                {
+                    float a = Mathf.PI / 2 + k * Mathf.PI / 5;
+                    float r = k % 2 == 0 ? 0.40f : 0.17f;
+                    points[k] = new Vector2(0.5f + r * Mathf.Cos(a), 0.47f + r * Mathf.Sin(a));
+                }
+                star = Glyph("Star", p => GlyphInside(p, points));
+            }
+            return star;
+        }
+    }
+
+    /// <summary>
+    /// A wicket, one unit across -- two legs and a crown: the badge on a ball
+    /// bridged in the jaws. Rounded where the strokes meet, like the wire.
+    /// </summary>
+    public static Sprite Arch
+    {
+        get
+        {
+            if (Spent(arch))
+                arch = Glyph("Arch", p =>
+                    GlyphSegment(p, new Vector2(0.30f, 0.22f), new Vector2(0.30f, 0.72f)) < 0.075f ||
+                    GlyphSegment(p, new Vector2(0.70f, 0.22f), new Vector2(0.70f, 0.72f)) < 0.075f ||
+                    GlyphSegment(p, new Vector2(0.30f, 0.72f), new Vector2(0.70f, 0.72f)) < 0.075f);
+            return arch;
+        }
+    }
+
+    /// <summary>
+    /// A white glyph baked from an inside test, sixteen samples a texel, so its
+    /// edge is soft by about a texel whichever way a stroke runs.
+    /// </summary>
+    static Sprite Glyph(string name, System.Func<Vector2, bool> inside)
+    {
+        const int size = 128, sub = 4;
+        var t = New(size, size);
+
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                int hits = 0;
+                for (int sy = 0; sy < sub; sy++)
+                    for (int sx = 0; sx < sub; sx++)
+                        if (inside(new Vector2((x + (sx + 0.5f) / sub) / size,
+                                               (y + (sy + 0.5f) / sub) / size)))
+                            hits++;
+                t.SetPixel(x, y, new Color(1, 1, 1, hits / (float)(sub * sub)));
+            }
+
+        t.Apply();
+        return Named(Sprite.Create(t, new Rect(0, 0, size, size), Half, size, 0,
+                                   SpriteMeshType.FullRect), name);
+    }
+
+    /// <summary>Distance from a point to a line segment.</summary>
+    static float GlyphSegment(Vector2 p, Vector2 a, Vector2 b)
+    {
+        var ab = b - a;
+        float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
+        return Vector2.Distance(p, a + ab * t);
+    }
+
+    /// <summary>Whether a point is inside a polygon, by the even-odd rule.</summary>
+    static bool GlyphInside(Vector2 p, Vector2[] poly)
+    {
+        bool inside = false;
+        for (int i = 0, j = poly.Length - 1; i < poly.Length; j = i++)
+            if ((poly[i].y > p.y) != (poly[j].y > p.y) &&
+                p.x < (poly[j].x - poly[i].x) * (p.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x)
+                inside = !inside;
+        return inside;
     }
 
     /// <summary>
